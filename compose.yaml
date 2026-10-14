@@ -1,0 +1,47 @@
+name: fitpilot
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fitpilot
+      POSTGRES_USER: fitpilot
+      POSTGRES_PASSWORD: ${FITPILOT_DB_PASSWORD:-fitpilot}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitpilot -d fitpilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/fitpilot
+      DB_USERNAME: fitpilot
+      DB_PASSWORD: ${FITPILOT_DB_PASSWORD:-fitpilot}
+      JWT_SECRET: ${JWT_SECRET:-fitpilot-local-docker-secret-change-before-production-2026}
+      JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-1440}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
+      AI_MODEL: ${AI_MODEL:-deepseek-chat}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-25}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+
+  web:
+    build:
+      context: ./web
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-5173}:80"
+
+volumes:
+  postgres-data:

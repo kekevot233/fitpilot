@@ -1,0 +1,27 @@
+# Java / Maven
+backend/target/
+backend/.mvn/
+.m2/
+*.class
+*.log
+
+# Local environment files
+.env
+.env.*
+!.env.example
+backend/.env
+web/.env
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Expo / Node (for the future mobile app)
+mobile/node_modules/
+mobile/.expo/
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/coverage/

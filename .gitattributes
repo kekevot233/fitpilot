@@ -1,0 +1,23 @@
+* text=auto
+
+# Keep source and container files stable across Windows, Linux and CI.
+*.java text eol=lf
+*.xml text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf
+*.sh text eol=lf
+
+# Native Windows scripts require CRLF in some execution environments.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

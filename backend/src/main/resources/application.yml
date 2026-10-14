@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: fitpilot-backend
+  datasource:
+    # Environment variables keep local credentials out of Git.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/fitpilot}
+    username: ${DB_USERNAME:fitpilot}
+    password: ${DB_PASSWORD:fitpilot}
+  jpa:
+    hibernate:
+      # Flyway owns schema changes; Hibernate only checks that entities still match the database.
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    # Existing local databases already match V3. Flyway records that baseline without replaying it.
+    # Empty databases still execute V1 -> V2 -> V3 normally.
+    baseline-on-migrate: true
+    baseline-version: 3
+    baseline-description: Hibernate schema before Flyway
+
+server:
+  port: ${SERVER_PORT:8080}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
+fitpilot:
+  ai:
+    # OpenAI-compatible Chat Completions API. Keep the key in an environment variable.
+    base-url: ${AI_BASE_URL:https://api.deepseek.com}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:deepseek-chat}
+    timeout-seconds: ${AI_TIMEOUT_SECONDS:25}
+  security:
+    jwt:
+      issuer: https://fitpilot.local
+      secret: ${JWT_SECRET:fitpilot-local-development-secret-change-before-production-2026}
+      expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
