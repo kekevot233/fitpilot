@@ -3,6 +3,8 @@ import type { NutritionTrend } from '../types'
 
 type Props = {
   trend: NutritionTrend
+  selectedDate: string
+  onSelectDate: (date: string) => void
 }
 
 function shortDate(value: string) {
@@ -10,7 +12,15 @@ function shortDate(value: string) {
   return `${Number(month)}/${Number(day)}`
 }
 
-export function NutritionTrendPanel({ trend }: Props) {
+function dayLabel(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(new Date(`${value}T00:00:00`))
+}
+
+export function NutritionTrendPanel({ trend, selectedDate, onSelectDate }: Props) {
   const chartMaximum = useMemo(() => Math.max(
     1,
     ...trend.points.flatMap((point) => [point.calories, point.targetCalories]),
@@ -52,15 +62,26 @@ export function NutritionTrendPanel({ trend }: Props) {
           </div>
         </div>
 
-        <div className="nutrition-bar-chart" role="img" aria-label="每日实际摄入与目标热量柱状图">
+        <div className="nutrition-bar-chart" role="group" aria-label="选择日期查看饮食记录">
           {trend.points.map((point) => {
             const consumedHeight = (point.calories / chartMaximum) * 100
             const targetPosition = (point.targetCalories / chartMaximum) * 100
+            const summary = point.logCount > 0
+              ? `摄入 ${point.calories.toFixed(0)} 千卡，目标 ${point.targetCalories} 千卡`
+              : `未记录，目标 ${point.targetCalories} 千卡`
             return (
-              <div className={`nutrition-bar-day${point.logCount === 0 ? ' empty' : ''}`} key={point.date}>
+              <button
+                className={`nutrition-bar-day${point.logCount === 0 ? ' empty' : ''}${point.date === selectedDate ? ' selected' : ''}`}
+                type="button"
+                aria-current={point.date === selectedDate ? 'date' : undefined}
+                aria-label={`查看${dayLabel(point.date)}的饮食记录：${summary}`}
+                title={`${point.date}：${summary}`}
+                onClick={() => onSelectDate(point.date)}
+                key={point.date}
+              >
                 <div
                   className="nutrition-bar-track"
-                  title={`${point.date}：${point.logCount > 0 ? `${point.calories.toFixed(0)} kcal` : '未记录'}，目标 ${point.targetCalories} kcal`}
+                  aria-hidden="true"
                 >
                   {point.targetCalories > 0 && (
                     <span className="nutrition-target-marker" style={{ bottom: `${targetPosition}%` }} />
@@ -68,7 +89,7 @@ export function NutritionTrendPanel({ trend }: Props) {
                   <span className="nutrition-consumed-bar" style={{ height: `${consumedHeight}%` }} />
                 </div>
                 <span>{shortDate(point.date)}</span>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -77,6 +98,7 @@ export function NutritionTrendPanel({ trend }: Props) {
       <div className="nutrition-trend-legend">
         <span><i className="consumed-key" />实际摄入</span>
         <span><i className="target-key" />当日目标</span>
+        <span>点击日期查看明细</span>
       </div>
     </section>
   )

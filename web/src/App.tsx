@@ -205,7 +205,13 @@ export default function App() {
           onSaved={handleProfileChanged}
         />
         <CustomFoodManager />
-        {nutritionTrend && <NutritionTrendPanel trend={nutritionTrend} />}
+        {nutritionTrend && (
+          <NutritionTrendPanel
+            trend={nutritionTrend}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+          />
+        )}
         {dashboard && (
           <>
             {weightTrend && (

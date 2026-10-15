@@ -247,9 +247,11 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 - 后端用一次范围查询读取饮食记录、一次查询读取目标历史，再在 Java 中按日期聚合，避免循环请求七次 Dashboard。
 - 未记录日期保留为空柱，但不以 0 kcal 计入平均，防止误导用户。
+- 每根趋势柱都是日期按钮；点击有记录的日期可查看当天明细，点击空白日期可直接进入当天补记。选择后复用 `App` 的 `selectedDate` 数据流，同时刷新 Dashboard、饮食趋势和体重趋势。
+- 当前日期使用 `aria-current="date"` 和选中样式标记；每个按钮向读屏器说明日期、实际摄入和目标，也支持键盘聚焦与操作。
 - 接口从 JWT 读取用户 ID，`days` 限制为 7–30。
 - 前端组件：`web/src/components/NutritionTrendPanel.tsx`。
-- 验证：前端 `npm run build` 成功；后端 `mvn -o test` 共 40 项通过。
+- 验证：前端 3 个 Vitest 流程测试和 `npm run build` 通过；后端接口未改动。
 - 新增 `UserProfileServiceTest`：三种目标热量与宏量重算、历史目标保留、同日多次切换和用户不存在。
 - 新增 `NutritionPlanControllerTest`：JWT 用户隔离、未登录拒绝、缺失/null/非法目标拒绝。
 - 七日趋势的数值逻辑目前主要由后端服务 / MVC 测试覆盖；现有 Playwright 核心流程会加载该面板，但还没有逐项断言图表数值。
@@ -268,18 +270,19 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 ## 网页核心流程测试（已实现）
 
-网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，并包含两条跨组件流程测试。
+网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，并包含三条跨组件流程测试。
 
 - 测试文件：`web/src/App.core-flow.test.tsx`。
 - 测试环境初始化：`web/src/test/setup.ts`。
 - 配置：`web/vite.config.ts` 的 `test` 区块；命令来自 `web/package.json` 的 `test` 和 `test:watch`。
 - 覆盖流程：从未登录页面填写邮箱和密码 → 保存 access token → 加载 Dashboard → 搜索并选择熟米饭 → 输入 200g 和午餐 → 预览营养 → 保存饮食记录 → 切换为减脂计划。
 - 第二条流程从已有饮食记录生成“最近记录”响应，验证页面显示“上次 280g · 晚餐”，选择后克数和餐次均自动带入。
+- 第三条流程点击七日趋势中的昨天，验证日期控件同步更新、请求携带目标日期，并在刷新后标记当前选中柱。
 - 测试通过全局 `fetch` stub 保留真实 `api.ts` 的调用路径，验证登录请求、饮食记录请求和计划更新请求的 HTTP 方法与 JSON；同时验证登录后的请求包含 `Authorization: Bearer test-access-token`。
 - 测试后端是内存中的确定性响应，不连接 8080 或 PostgreSQL。它验证 React 页面协作和前端 API 契约；真实 SQL/Flyway 由后端 Testcontainers 测试负责。
 - 这些测试使用内存响应，适合快速、稳定地定位 React 组件协作和 API 契约问题；真实部署链路由下一节的 Playwright 测试补足。
 - 新增依赖后发现的 `source-map-js 1.2.1` 审计问题已升级到 1.2.2；最近一次 npm 审计为 0 个已知漏洞。
-- 最近验证：`npm test` 为 2 个测试通过；`npm run build` 通过。
+- 最近验证：`npm test` 为 3 个测试通过；`npm run build` 通过。
 
 ## Playwright 真实浏览器端到端测试（已实现）
 

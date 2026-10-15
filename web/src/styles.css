@@ -900,16 +900,44 @@ main {
 }
 
 .nutrition-bar-day {
+  width: 100%;
   height: 171px;
+  padding: 0;
   display: grid;
   grid-template-rows: 146px 20px;
   gap: 5px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  cursor: pointer;
+  font: inherit;
   text-align: center;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.nutrition-bar-day:hover {
+  background: rgba(62, 132, 108, 0.07);
+}
+
+.nutrition-bar-day:focus-visible {
+  outline: 2px solid #3d876d;
+  outline-offset: 2px;
+}
+
+.nutrition-bar-day.selected {
+  background: rgba(62, 132, 108, 0.11);
+  box-shadow: inset 0 -2px #3d876d;
 }
 
 .nutrition-bar-day > span {
   color: #7f8e89;
   font-size: 9px;
+}
+
+.nutrition-bar-day.selected > span {
+  color: #2f765e;
+  font-weight: 700;
 }
 
 .nutrition-bar-track {

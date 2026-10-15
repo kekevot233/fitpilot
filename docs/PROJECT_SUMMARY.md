@@ -57,7 +57,7 @@ FitPilot 是一个面向健身新手、大学生和日常健身用户的饮食�
 ### 数据展示
 
 - 今日 Dashboard：目标、已摄入和剩余热量及三大营养素。
-- 七日摄入趋势、每日目标线、平均摄入与有效记录天数。
+- 七日摄入趋势、每日目标线、平均摄入与有效记录天数；点击趋势日期可查看当天明细或进入空白日期补记。
 - 体重记录与七日移动平均趋势。
 - Swagger UI 可视化查看和测试后端 API。
 
@@ -100,12 +100,13 @@ Java 21 + Spring Boot 单体后端
 - **复用最近一次录入习惯**：最近食物接口在多用户隔离与去重基础上返回上次克数、餐次和时间，网页自动填入但保留营养确认步骤，减少重复操作并避免误记。
 - **事务保证批量操作一致性**：复制某日饮食、修改资料并重算目标等多步写入在事务内完成。
 - **聚合交给后端、展示交给前端**：跨日期趋势由后端聚合；每餐小计等当前页面派生数据在前端计算。
+- **图表同时承担日期导航**：七日趋势柱使用原生按钮语义、`aria-current` 和完整读屏说明，在桌面、手机与键盘操作中都能进入对应日期。
 
 ## 当前质量基线
 
 - `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-15 [最近份量复用 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38709632256)全部通过，并生成三类测试报告。
 - 后端测试：72 个快速单元 / MVC 测试通过；2 个 PostgreSQL Testcontainers 集成测试通过，覆盖空库迁移和最近份量去重查询。
-- 前端测试：2 个 Vitest 跨组件流程测试，覆盖核心饮食流程和最近份量自动填入；Playwright 有注册、错误登录和核心饮食 3 个场景，在桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共形成 9 个执行项；TypeScript 检查和 Vite 生产构建通过。
+- 前端测试：3 个 Vitest 跨组件流程测试，覆盖核心饮食流程、最近份量自动填入和趋势日期导航；Playwright 有注册、错误登录和核心饮食 3 个场景，在桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共形成 9 个执行项；TypeScript 检查和 Vite 生产构建通过。
 - npm 依赖审计：0 个已知漏洞。
 - Docker Compose 三容器开发环境联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。
 - 单服务生产镜像联合验收通过：production profile 使用 Render 风格 `connectionString` 连接独立 PostgreSQL，健康、首页、静态资源与 OpenAPI 返回成功，未登录业务 API 返回 401；桌面和手机 Chromium 6 项通过。

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -82,7 +82,13 @@ function consumedNutrition(): NutritionValues {
   }), { calories: 0, protein: 0, carbs: 0, fat: 0 })
 }
 
-function dashboard(): DailyDashboard {
+function offsetDate(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00`)
+  date.setDate(date.getDate() + days)
+  return date.toLocaleDateString('sv-SE')
+}
+
+function dashboard(date = today): DailyDashboard {
   const consumed = consumedNutrition()
   const target: NutritionValues = {
     calories: currentUser.nutritionTarget.targetCalories,
@@ -93,7 +99,7 @@ function dashboard(): DailyDashboard {
 
   return {
     userId: currentUser.id,
-    date: today,
+    date,
     target,
     consumed,
     remaining: {
@@ -106,21 +112,26 @@ function dashboard(): DailyDashboard {
   }
 }
 
-function nutritionTrend(): NutritionTrend {
+function nutritionTrend(endDate = today): NutritionTrend {
   const consumed = consumedNutrition()
   const hasLogs = foodLogs.length > 0
+  const startDate = offsetDate(endDate, -6)
   return {
-    startDate: today,
-    endDate: today,
+    startDate,
+    endDate,
     daysLogged: hasLogs ? 1 : 0,
     averageCalories: hasLogs ? consumed.calories : 0,
     averageTargetCalories: currentUser.nutritionTarget.targetCalories,
-    points: [{
-      date: today,
-      ...consumed,
-      targetCalories: currentUser.nutritionTarget.targetCalories,
-      logCount: foodLogs.length,
-    }],
+    points: Array.from({ length: 7 }, (_, index) => {
+      const date = offsetDate(startDate, index)
+      const isEndDate = date === endDate
+      return {
+        date,
+        ...(isEndDate ? consumed : { calories: 0, protein: 0, carbs: 0, fat: 0 }),
+        targetCalories: currentUser.nutritionTarget.targetCalories,
+        logCount: isEndDate ? foodLogs.length : 0,
+      }
+    }),
   }
 }
 
@@ -171,11 +182,11 @@ function installBackendStub() {
     }
 
     if (method === 'GET' && url.pathname === `/api/users/${currentUser.id}/dashboard`) {
-      return json(dashboard())
+      return json(dashboard(url.searchParams.get('date') ?? today))
     }
 
     if (method === 'GET' && url.pathname === '/api/me/nutrition-trend') {
-      return json(nutritionTrend())
+      return json(nutritionTrend(url.searchParams.get('endDate') ?? today))
     }
 
     if (method === 'GET' && url.pathname === '/api/me/weight-trend') {
@@ -341,5 +352,28 @@ describe('FitPilot 核心饮食流程', () => {
 
     expect(screen.getByLabelText('食用克数')).toHaveValue(280)
     expect(screen.getByLabelText('餐次')).toHaveValue('DINNER')
+  })
+
+  it('点击七日趋势日期后加载当天记录', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.type(screen.getByLabelText('邮箱'), 'zhengyi@example.com')
+    await user.type(screen.getByLabelText('密码'), 'FitPilot123')
+    await user.click(screen.getByRole('button', { name: '登录 FitPilot' }))
+
+    const previousDate = offsetDate(today, -1)
+    const emptyDays = await screen.findAllByRole('button', { name: /的饮食记录：未记录/ })
+    await user.click(emptyDays.at(-2)!)
+
+    expect(screen.getByLabelText('选择饮食记录日期')).toHaveValue(previousDate)
+    await waitFor(() => {
+      expect(requests).toContainEqual(expect.objectContaining({
+        path: `/api/users/1/dashboard?date=${previousDate}`,
+        method: 'GET',
+        authorization: 'Bearer test-access-token',
+      }))
+    })
+    expect(await screen.findByRole('button', { current: 'date' })).toHaveAccessibleName(/饮食记录/)
   })
 })
