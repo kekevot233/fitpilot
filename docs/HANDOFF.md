@@ -302,7 +302,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 未取消的运行会上传 `backend-test-reports`（Surefire/Failsafe）、`frontend-test-reports`（Vitest JUnit）和 `playwright-report`（JUnit、HTML、截图/trace）。E2E 失败时还会收集 Compose 状态和日志；报告保留 14 天。
 - CI 现在覆盖完整应用服务的 Playwright E2E，但仍不部署应用。后续可按团队流程把三个任务设为分支保护的必需检查，并扩展注册、失败路径、移动端视口和跨浏览器场景。
 - 配置通过 actionlint 1.7.12 静态检查；2026-10-15 [首次 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38661508064)（提交 `e7d0ffc`）两个任务均成功。日志确认 72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest 测试和生产构建全部通过，两个测试报告 artifact 均已上传。
-- 2026-10-15 本地复验：72 个快速测试、1 个 Vitest、生产构建和 1 个 Playwright E2E 通过，`npm ci` 审计为 0 个已知漏洞；CI 配置通过 actionlint。新增 E2E 任务的 GitHub 云端结果需在本次提交推送后确认。
+- 2026-10-15 本地复验：72 个快速测试、1 个 Vitest、生产构建和 1 个 Playwright E2E 通过，`npm ci` 审计为 0 个已知漏洞；CI 配置通过 actionlint。[新增 E2E 后的 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38663265832)（提交 `fb1534c`）三个任务全部通过，并上传 `backend-test-reports`、`frontend-test-reports` 和 `playwright-report`。
 
 ## 本地运行
 

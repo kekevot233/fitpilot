@@ -100,7 +100,7 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- `.github/workflows/ci.yml` 已覆盖后端、前端和完整 Playwright E2E，工作流通过 actionlint 静态检查；新增 E2E 任务的云端状态以本次推送后的 Actions 运行结果为准。
+- `.github/workflows/ci.yml` 已覆盖后端、前端和完整 Playwright E2E，工作流通过 actionlint 静态检查；2026-10-15 [GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38663265832)三个任务全部通过，并生成三类测试报告。
 - 后端测试：72 个快速单元 / MVC 测试通过；1 个 PostgreSQL Testcontainers 集成测试通过。
 - 前端测试：1 个 Vitest 跨组件流程测试、1 个 Playwright Chromium 端到端测试通过；TypeScript 检查和 Vite 生产构建通过。
 - npm 依赖审计：0 个已知漏洞。
