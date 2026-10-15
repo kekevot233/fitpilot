@@ -118,9 +118,9 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Install Chromium and system dependencies
+      - name: Install Chromium, Firefox, and system dependencies
         working-directory: web
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox
 
       - name: Build and start the complete application
         run: docker compose up --build --detach --wait --wait-timeout 180

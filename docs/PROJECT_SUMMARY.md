@@ -89,9 +89,9 @@ Java 21 + Spring Boot 单体后端
 - **数据库结构版本化**：Flyway 按 V1、V2、V3 管理建表与结构升级，Hibernate 只校验实体映射，不再自动修改数据库。
 - **真实数据库回归测试**：Testcontainers 在 Docker 临时 PostgreSQL 17 中从空库执行全部 Flyway 迁移，并验证表结构、约束与初始化数据，不依赖开发者本地数据库状态。
 - **网页核心流程回归测试**：Vitest、Testing Library 和 jsdom 从登录界面驱动“登录 → 搜索并记录食物 → 切换减脂计划”，同时校验 REST 路径、请求体和 JWT 请求头。
-- **真实浏览器端到端测试**：Playwright + Chromium 连接实际 Nginx、Spring Boot 与 PostgreSQL，按用户界面完成登录、记录食物和调整计划，并在结束后清理临时饮食记录。
+- **真实浏览器端到端测试**：Playwright 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 连接实际 Nginx、Spring Boot 与 PostgreSQL，覆盖注册、错误登录及“记录食物 → 调整计划”，并在结束后清理临时饮食记录。
 - **容器化运行环境**：Docker Compose 编排 PostgreSQL、Spring Boot 与 Nginx/React；数据库健康后再启动后端，后端健康后再启动网页。浏览器只访问同源 `/api`，由开发期 Vite 或容器内 Nginx 反向代理到后端。
-- **持续集成**：GitHub Actions 先并行运行后端快速测试 / Testcontainers PostgreSQL 集成测试和前端 Vitest / TypeScript 检查 / 生产构建，再用 Docker Compose + Playwright Chromium 验证完整真实链路；保留三类测试报告和失败诊断。
+- **持续集成**：GitHub Actions 先并行运行后端快速测试 / Testcontainers PostgreSQL 集成测试和前端 Vitest / TypeScript 检查 / 生产构建，再用 Docker Compose + Playwright 验证桌面、移动端及跨浏览器真实链路；保留三类测试报告和失败诊断。
 - **精确表示营养数值**：重量和营养数据使用 `BigDecimal`，减少浮点误差。
 - **内置与自定义食物共用模型**：内置食物的 `owner_id` 为空，自定义食物关联创建者，兼顾统一查询与用户隔离。
 - **归档代替直接删除**：自定义食物使用 `active=false` 软删除，避免破坏已经存在的饮食记录。
@@ -100,16 +100,16 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- `.github/workflows/ci.yml` 已覆盖后端、前端和完整 Playwright E2E，工作流通过 actionlint 静态检查；2026-10-15 [GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38663265832)三个任务全部通过，并生成三类测试报告。
+- `.github/workflows/ci.yml` 已扩展为桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项，工作流通过 actionlint；云端跨浏览器结果以本次推送后的 Actions 运行状态为准。
 - 后端测试：72 个快速单元 / MVC 测试通过；1 个 PostgreSQL Testcontainers 集成测试通过。
-- 前端测试：1 个 Vitest 跨组件流程测试、1 个 Playwright Chromium 端到端测试通过；TypeScript 检查和 Vite 生产构建通过。
+- 前端测试：1 个 Vitest 跨组件流程测试；Playwright 有注册、错误登录和核心饮食 3 个场景，在桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共形成 9 个执行项；TypeScript 检查和 Vite 生产构建通过。
 - npm 依赖审计：0 个已知漏洞。
 - Docker Compose 三容器联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。
 - 从全新容器数据库启动时，Flyway 自动完成 V1 → V2 → V3，初始化 85 个食物；真实链路已验证“登录 → 搜索熟米饭 → 记录 200g → Dashboard 显示 260 kcal → 切换减脂计划并重算目标”。
 - 后端能够连接真实 PostgreSQL 启动；现有数据库 V3 基线接管，以及 Docker 临时空库从 V1 到 V3 的完整迁移均已验证。
 - Swagger UI 提供接口文档和手动测试入口。
 
-2026-10-15 已本地复验快速测试、Vitest、生产构建和隔离 Compose + Playwright E2E；三个容器均 healthy，空库初始化 85 个食物，真实浏览器流程通过。此前 Docker Desktop socket 启动故障已经恢复，原 FitPilot 数据卷仍存在。
+2026-10-15 已在隔离 Compose 环境复验桌面与手机 Chromium 共 6 项，三个容器均 healthy，空库初始化 85 个食物；本机 Firefox 进程受 Windows 环境限制未启动，等待 GitHub Ubuntu runner 验证。原 FitPilot 数据卷未被使用。
 
 以上数字是当前快照；新增功能后必须重新验证并同步更新，不能把旧结果长期保留为现状。
 
@@ -118,15 +118,15 @@ Java 21 + Spring Boot 单体后端
 - 为兼容开发早期已经存在的数据库，暂时启用了 Flyway `baseline-on-migrate`；确认所有部署环境均被接管后应关闭自动基线。
 - 当前受 Spring Boot 管理的 Flyway 10.20.1 在 PostgreSQL 18.6 上运行成功，但会提示官方测试范围到 PostgreSQL 17，后续依赖升级需要再次验证。
 - JWT 保存在浏览器本地存储中，尚未实现 refresh token、主动注销失效和更完善的生产安全策略。
-- CI 已覆盖后端、数据库迁移、前端测试 / 构建和 Chromium 真实链路；仍未接入自动部署、移动端视口或跨浏览器检查。
-- 浏览器自动化目前只覆盖 Chromium 的核心成功路径，尚未覆盖注册、失败重试、移动端视口和跨浏览器场景；也尚无线上监控和公开演示环境。
+- CI 已覆盖后端、数据库迁移、前端测试 / 构建，以及 Chromium、Firefox 和手机视口真实链路；仍未接入自动部署或 WebKit。
+- 浏览器自动化已覆盖注册、错误密码和核心饮食流程，但尚未覆盖接口超时/重试、WebKit、视觉回归和无障碍检查；也尚无线上监控和公开演示环境。
 - AI 营养估算是可选辅助能力，结果受菜品做法和模型输出影响，不能视为权威营养数据。
 - 拍照识别食物、移动端、HealthKit 和完整训练体验尚未实现。
 
 ## 下一阶段优先级
 
 1. 选择托管平台并发布公开演示环境，补齐生产环境变量、HTTPS 和数据库备份策略。
-2. 扩展 Playwright 场景，覆盖注册、输入错误、接口失败、移动端视口和至少一个跨浏览器检查。
+2. 扩展 Playwright 的接口超时/重试、WebKit、视觉回归和无障碍检查。
 3. 改进认证安全，包括更合理的 token 生命周期、refresh token 与注销策略。
 4. 稳定饮食 MVP 后，再继续训练模块或拍照识别。
 

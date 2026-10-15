@@ -83,11 +83,11 @@ cd D:\code\fitapp\web
 npm test
 ```
 
-Docker Compose 正在运行时，可以执行真实 Chromium 端到端测试：
+Docker Compose 正在运行时，可以执行真实跨浏览器端到端测试：
 
 ```powershell
 cd D:\code\fitapp\web
-npx playwright install chromium  # 每台机器首次运行一次
+npx playwright install chromium firefox  # 每台机器首次运行一次
 npm run test:e2e
 ```
 
@@ -107,7 +107,7 @@ mvn -Pintegration-tests verify
 
 - 后端：Java 21 + Maven 快速测试、Testcontainers PostgreSQL 集成测试和打包。
 - 前端：Node.js 22 + `npm ci`、Vitest、TypeScript 检查和 Vite 生产构建。
-- 端到端：前两项通过后，用 Docker Compose 启动 PostgreSQL、Spring Boot 和 Nginx/React，再由 Playwright Chromium 验证真实用户流程。
+- 端到端：前两项通过后，用 Docker Compose 启动 PostgreSQL、Spring Boot 和 Nginx/React，再由桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 验证注册、登录失败及核心饮食流程。
 
 后端、前端和 Playwright 报告在运行页面的 Artifacts 中保留 14 天；E2E 失败时还会保存容器状态和日志。CI 使用临时数据库卷，不需要配置应用密钥或外部数据库，并在结束时自动清理。配置和排错说明见[开发交接文档](docs/HANDOFF.md#github-actions-ci已接入)。
 

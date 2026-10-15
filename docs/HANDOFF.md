@@ -280,14 +280,14 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 ## Playwright 真实浏览器端到端测试（已实现）
 
-- 测试文件：`web/e2e/nutrition-core-flow.spec.ts`；配置：`web/playwright.config.ts`。
+- 测试文件：`web/e2e/nutrition-core-flow.spec.ts`、`web/e2e/auth-flow.spec.ts`；配置：`web/playwright.config.ts`。
 - 连接正在运行的 `http://127.0.0.1:5173`，实际经过 Nginx `/api` 代理、Spring Boot 和容器 PostgreSQL，不使用 fetch stub。
-- 覆盖“登录 → 搜索熟米饭 → 输入 137g 并记录到午餐 → 页面显示记录 → 切换饮食计划并看到成功反馈”。
+- 覆盖三类场景：错误密码返回 401 且不保存 token；从完整注册表单创建账户并生成轻盈增肌目标；登录后搜索熟米饭、记录 137g 午餐并切换饮食计划。
 - 测试通过 API 幂等准备专用账户；`finally` 中删除本轮饮食记录，失败时也尽量避免污染后续运行。计划在减脂与维持之间交替，不额外执行“恢复”写入，因为每次计划更新都会形成一条具有业务意义的历史目标版本。
 - Playwright 与 Vitest 分工明确：`vite.config.ts` 只扫描 `src/**/*.test.ts(x)`，避免把 `e2e/*.spec.ts` 误交给 Vitest。
-- 默认只运行 Chromium、单 worker 串行执行，避免共享测试账户并发写入。首次运行需执行 `npx playwright install chromium`。
+- 配置包含桌面 Chromium、桌面 Firefox 和 Pixel 5 手机尺寸 Chromium；三个项目共执行 9 项测试。保持单 worker 串行，避免共享测试账户并发写入。首次运行需执行 `npx playwright install chromium firefox`。
 - `playwright.config.ts` 在 CI 环境额外生成 JUnit 与 HTML 报告；本地仍使用简洁列表输出。`playwright-report/` 与 `test-results/` 已被 Git 忽略。
-- 2026-10-15 使用隔离的 `fitpilot-e2e-ci` Compose 项目复验：三个服务均 healthy，空库初始化 85 个食物，Chromium E2E 1 项通过（7.5 秒）；随后删除临时容器、网络和数据卷，原 `fitpilot_postgres-data` 未被使用。
+- 2026-10-15 使用隔离的 `fitpilot-e2e-expanded` Compose 项目复验：三个服务均 healthy，桌面与手机 Chromium 共 6 项通过；当前 Windows/Codex 环境启动 Firefox 时被系统以 `spawn UNKNOWN` 拒绝，Firefox 结果需由 GitHub Ubuntu runner 确认。临时环境含 7 个测试账号，验证后已连同数据卷删除，原 `fitpilot_postgres-data` 未被使用。
 
 ## GitHub Actions CI（已接入）
 
@@ -295,12 +295,12 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 工作流包含三个 `ubuntu-24.04` 任务：后端与前端先并行，二者通过后再运行端到端任务：
   - `Backend tests and PostgreSQL integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 72 个快速测试，Failsafe 执行 1 个 `*IT` 测试并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
   - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。
-  - `Playwright end-to-end`：安装 Chromium 与系统依赖，执行 `docker compose up --build --detach --wait`，再运行 `npm run test:e2e`。它经过 Nginx、Spring Boot 和 PostgreSQL 验证真实页面流程；无论成功失败都执行 `docker compose down --volumes --remove-orphans`。
+  - `Playwright end-to-end`：安装 Chromium、Firefox 与系统依赖，执行 `docker compose up --build --detach --wait`，再运行 `npm run test:e2e`。它经过 Nginx、Spring Boot 和 PostgreSQL 验证真实页面流程；无论成功失败都执行 `docker compose down --volumes --remove-orphans`。
 - 后端任务直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine`；E2E 任务另起完整 Compose 环境，并使用仅限该临时环境的数据库密码和 JWT secret。两者都不访问开发者数据库，也不需要仓库 secrets。
 - Maven 缓存按 `backend/pom.xml`、npm 缓存按 `web/package-lock.json` 配置；`npm ci` 严格使用锁文件，不缓存 `node_modules`。
 - 工作流只授予 `contents: read`，checkout 不保留凭据；官方 Actions 固定到完整 commit SHA。后端超时 20 分钟、前端超时 10 分钟、E2E 超时 25 分钟；同一分支或 PR 的新运行会取消旧运行。
 - 未取消的运行会上传 `backend-test-reports`（Surefire/Failsafe）、`frontend-test-reports`（Vitest JUnit）和 `playwright-report`（JUnit、HTML、截图/trace）。E2E 失败时还会收集 Compose 状态和日志；报告保留 14 天。
-- CI 现在覆盖完整应用服务的 Playwright E2E，但仍不部署应用。后续可按团队流程把三个任务设为分支保护的必需检查，并扩展注册、失败路径、移动端视口和跨浏览器场景。
+- CI 现在覆盖完整应用服务的注册、错误登录和核心饮食 Playwright E2E，并包含桌面 Chromium、桌面 Firefox 与手机尺寸。它仍不部署应用；后续可增加接口故障重试、WebKit 和无障碍检查，并按团队流程把三个任务设为分支保护的必需检查。
 - 配置通过 actionlint 1.7.12 静态检查；2026-10-15 [首次 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38661508064)（提交 `e7d0ffc`）两个任务均成功。日志确认 72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest 测试和生产构建全部通过，两个测试报告 artifact 均已上传。
 - 2026-10-15 本地复验：72 个快速测试、1 个 Vitest、生产构建和 1 个 Playwright E2E 通过，`npm ci` 审计为 0 个已知漏洞；CI 配置通过 actionlint。[新增 E2E 后的 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38663265832)（提交 `fb1534c`）三个任务全部通过，并上传 `backend-test-reports`、`frontend-test-reports` 和 `playwright-report`。
 
@@ -435,7 +435,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-最近一次已通过：前端 `1` 个 Vitest 核心流程测试、`1` 个 Playwright Chromium 端到端测试与生产构建成功；后端 `72` 个快速测试和 `1` 个 PostgreSQL Testcontainers 集成测试全部通过；现有 PostgreSQL V3 基线接管、临时空库 V1 → V3 以及 Docker Compose 空库 V1 → V3 均验证成功；npm 审计为 0 个已知漏洞；三个 Compose 服务联合启动并全部 healthy；真实浏览器、HTTP 闭环和数据库落盘均通过。
+最近一次已通过：前端 `1` 个 Vitest 核心流程测试、桌面与手机 Chromium 共 `6` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `1` 个 PostgreSQL Testcontainers 集成测试全部通过；现有 PostgreSQL V3 基线接管、临时空库 V1 → V3 以及 Docker Compose 空库 V1 → V3 均验证成功；npm 审计为 0 个已知漏洞。Firefox 本地受 Windows 进程启动限制，等待 GitHub CI 验证。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
