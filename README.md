@@ -101,6 +101,15 @@ mvn -Pintegration-tests verify
 
 集成测试会从空数据库执行 Flyway 迁移并自动删除测试容器，不会修改本机的 `fitpilot` 数据库。
 
+## Continuous integration
+
+[GitHub Actions CI](https://github.com/zhengyi123452/fitpilot/actions/workflows/ci.yml) 在每次 push、pull request 和手动触发时自动运行：
+
+- 后端：Java 21 + Maven 快速测试、Testcontainers PostgreSQL 集成测试和打包。
+- 前端：Node.js 22 + `npm ci`、Vitest、TypeScript 检查和 Vite 生产构建。
+
+测试报告在运行页面的 Artifacts 中保留 14 天。CI 不需要配置应用密钥或外部数据库；Playwright E2E 仍按上面的本地命令运行。配置和排错说明见[开发交接文档](docs/HANDOFF.md#github-actions-ci已接入)。
+
 ## Documentation
 
 - [Project Summary](docs/PROJECT_SUMMARY.md)：项目定位、当前成果、技术亮点、限制与下一阶段。

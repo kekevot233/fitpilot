@@ -2,7 +2,7 @@
 
 > 工作目录：`D:\code\fitapp`  
 > 当前阶段：网页端饮食记录 MVP；后端 Spring Boot + PostgreSQL；前端 React + Vite。  
-> 最后更新：2026-10-14
+> 最后更新：2026-10-15
 
 ## 文档维护规则
 
@@ -288,6 +288,20 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 默认只运行 Chromium、单 worker 串行执行，避免共享测试账户并发写入。首次运行需执行 `npx playwright install chromium`。
 - 最近验证：Chromium E2E 1 项通过（浏览器操作约 2 秒），Vitest 1 项通过，生产构建通过，npm 审计 0 个已知漏洞。
 
+## GitHub Actions CI（已接入）
+
+- 工作流：`.github/workflows/ci.yml`；所有分支的 push、pull request 和手动 `workflow_dispatch` 均可触发，没有按路径跳过检查。
+- 两个任务并行运行于 `ubuntu-24.04`：
+  - `Backend tests and PostgreSQL integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 72 个快速测试，Failsafe 执行 1 个 `*IT` 测试并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
+  - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。
+- CI 直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine`，不需要另起 Compose 或 PostgreSQL service，也不需要数据库、JWT 或 AI secrets。
+- Maven 缓存按 `backend/pom.xml`、npm 缓存按 `web/package-lock.json` 配置；`npm ci` 严格使用锁文件，不缓存 `node_modules`。
+- 工作流只授予 `contents: read`，checkout 不保留凭据；官方 Actions 固定到完整 commit SHA。后端超时 20 分钟、前端超时 10 分钟；同一分支或 PR 的新运行会取消旧运行。
+- 未取消的运行会尝试上传 `backend-test-reports`（Surefire/Failsafe）和 `frontend-test-reports`（Vitest JUnit），成功或测试失败时均保留报告 14 天。可在 GitHub → Actions → CI → 对应运行页面查看步骤日志并下载 Artifacts。
+- CI 不运行需要完整应用服务的 Playwright E2E，也不部署应用。下一步可在 CI 增加 Compose + Playwright，并按团队流程配置分支保护的必需检查。
+- 配置已通过 actionlint 1.7.12 静态检查；首次 GitHub 云端运行需要推送该工作流后确认，不能仅凭本地通过视为云端通过。
+- 2026-10-15 本地复验：72 个快速测试、1 个 Vitest 测试、生产构建通过，`npm ci` 审计为 0 个已知漏洞。Testcontainers 首次运行因 Docker Desktop 未启动失败；启动 Docker 后出现 Secrets Engine 的 `engine.sock` 重命名错误，属于本机环境故障，尚待云端验证完整集成测试。Playwright / Compose 的联合验收仍为 2026-10-14 的记录，本轮未重跑。
+
 ## 本地运行
 
 ### 推荐：Docker Compose 一键运行
@@ -328,7 +342,7 @@ docker compose down
 - 容器数据库包含隔离的烟雾 / E2E 测试账户、85 个食物；烟雾测试保留 1 条饮食记录用于落盘验证，Playwright 创建的记录会在测试结束后删除；
 - 网页容器健康检查必须访问 `127.0.0.1`，不能使用 `localhost`。Alpine 可能将后者解析为 `::1`，而当前 Nginx 只监听 IPv4，会造成网页可访问但容器被误标记为 unhealthy。
 
-本次验证使用的是容器专用测试账户与命名卷，不涉及本机 PostgreSQL。容器目前保持运行；可直接打开网页继续体验，或用 `docker compose down` 停止并保留数据库数据。
+本次验证使用的是容器专用测试账户与命名卷，不涉及本机 PostgreSQL。这是 2026-10-14 的运行记录；2026-10-15 Docker Desktop 启动遇到 Secrets Engine socket 错误，不能据此认为当前容器仍在运行。恢复 Docker 后可重新用 `docker compose up -d` 启动。
 
 注意：容器数据库和本机 PostgreSQL 是两套独立数据源，所以第一次打开容器版网页需要重新注册。这是环境隔离，不是数据丢失。
 
