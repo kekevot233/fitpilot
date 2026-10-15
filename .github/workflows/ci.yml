@@ -92,3 +92,61 @@ jobs:
           path: web/test-results/vitest.xml
           if-no-files-found: warn
           retention-days: 14
+
+  end-to-end:
+    name: Playwright end-to-end
+    needs: [backend, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      FITPILOT_DB_PASSWORD: fitpilot-ci-database-password
+      JWT_SECRET: fitpilot-ci-jwt-secret-with-at-least-thirty-two-characters
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 22 and npm cache
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Chromium and system dependencies
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Build and start the complete application
+        run: docker compose up --build --detach --wait --wait-timeout 180
+
+      - name: Run Playwright against Nginx, Spring Boot, and PostgreSQL
+        working-directory: web
+        run: npm run test:e2e
+
+      - name: Capture Compose logs on failure
+        if: ${{ failure() }}
+        run: |
+          mkdir -p web/test-results
+          docker compose ps --all > web/test-results/compose-status.txt
+          docker compose logs --no-color > web/test-results/compose.log
+
+      - name: Upload Playwright report and diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop application and remove the CI database volume
+        if: ${{ always() }}
+        run: docker compose down --volumes --remove-orphans

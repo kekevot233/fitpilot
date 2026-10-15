@@ -107,8 +107,9 @@ mvn -Pintegration-tests verify
 
 - 后端：Java 21 + Maven 快速测试、Testcontainers PostgreSQL 集成测试和打包。
 - 前端：Node.js 22 + `npm ci`、Vitest、TypeScript 检查和 Vite 生产构建。
+- 端到端：前两项通过后，用 Docker Compose 启动 PostgreSQL、Spring Boot 和 Nginx/React，再由 Playwright Chromium 验证真实用户流程。
 
-测试报告在运行页面的 Artifacts 中保留 14 天。CI 不需要配置应用密钥或外部数据库；Playwright E2E 仍按上面的本地命令运行。配置和排错说明见[开发交接文档](docs/HANDOFF.md#github-actions-ci已接入)。
+后端、前端和 Playwright 报告在运行页面的 Artifacts 中保留 14 天；E2E 失败时还会保存容器状态和日志。CI 使用临时数据库卷，不需要配置应用密钥或外部数据库，并在结束时自动清理。配置和排错说明见[开发交接文档](docs/HANDOFF.md#github-actions-ci已接入)。
 
 ## Documentation
 

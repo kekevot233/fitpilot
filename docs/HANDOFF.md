@@ -286,21 +286,23 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 测试通过 API 幂等准备专用账户；`finally` 中删除本轮饮食记录，失败时也尽量避免污染后续运行。计划在减脂与维持之间交替，不额外执行“恢复”写入，因为每次计划更新都会形成一条具有业务意义的历史目标版本。
 - Playwright 与 Vitest 分工明确：`vite.config.ts` 只扫描 `src/**/*.test.ts(x)`，避免把 `e2e/*.spec.ts` 误交给 Vitest。
 - 默认只运行 Chromium、单 worker 串行执行，避免共享测试账户并发写入。首次运行需执行 `npx playwright install chromium`。
-- 最近验证：Chromium E2E 1 项通过（浏览器操作约 2 秒），Vitest 1 项通过，生产构建通过，npm 审计 0 个已知漏洞。
+- `playwright.config.ts` 在 CI 环境额外生成 JUnit 与 HTML 报告；本地仍使用简洁列表输出。`playwright-report/` 与 `test-results/` 已被 Git 忽略。
+- 2026-10-15 使用隔离的 `fitpilot-e2e-ci` Compose 项目复验：三个服务均 healthy，空库初始化 85 个食物，Chromium E2E 1 项通过（7.5 秒）；随后删除临时容器、网络和数据卷，原 `fitpilot_postgres-data` 未被使用。
 
 ## GitHub Actions CI（已接入）
 
 - 工作流：`.github/workflows/ci.yml`；所有分支的 push、pull request 和手动 `workflow_dispatch` 均可触发，没有按路径跳过检查。
-- 两个任务并行运行于 `ubuntu-24.04`：
+- 工作流包含三个 `ubuntu-24.04` 任务：后端与前端先并行，二者通过后再运行端到端任务：
   - `Backend tests and PostgreSQL integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 72 个快速测试，Failsafe 执行 1 个 `*IT` 测试并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
   - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。
-- CI 直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine`，不需要另起 Compose 或 PostgreSQL service，也不需要数据库、JWT 或 AI secrets。
+  - `Playwright end-to-end`：安装 Chromium 与系统依赖，执行 `docker compose up --build --detach --wait`，再运行 `npm run test:e2e`。它经过 Nginx、Spring Boot 和 PostgreSQL 验证真实页面流程；无论成功失败都执行 `docker compose down --volumes --remove-orphans`。
+- 后端任务直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine`；E2E 任务另起完整 Compose 环境，并使用仅限该临时环境的数据库密码和 JWT secret。两者都不访问开发者数据库，也不需要仓库 secrets。
 - Maven 缓存按 `backend/pom.xml`、npm 缓存按 `web/package-lock.json` 配置；`npm ci` 严格使用锁文件，不缓存 `node_modules`。
-- 工作流只授予 `contents: read`，checkout 不保留凭据；官方 Actions 固定到完整 commit SHA。后端超时 20 分钟、前端超时 10 分钟；同一分支或 PR 的新运行会取消旧运行。
-- 未取消的运行会尝试上传 `backend-test-reports`（Surefire/Failsafe）和 `frontend-test-reports`（Vitest JUnit），成功或测试失败时均保留报告 14 天。可在 GitHub → Actions → CI → 对应运行页面查看步骤日志并下载 Artifacts。
-- CI 不运行需要完整应用服务的 Playwright E2E，也不部署应用。下一步可在 CI 增加 Compose + Playwright，并按团队流程配置分支保护的必需检查。
+- 工作流只授予 `contents: read`，checkout 不保留凭据；官方 Actions 固定到完整 commit SHA。后端超时 20 分钟、前端超时 10 分钟、E2E 超时 25 分钟；同一分支或 PR 的新运行会取消旧运行。
+- 未取消的运行会上传 `backend-test-reports`（Surefire/Failsafe）、`frontend-test-reports`（Vitest JUnit）和 `playwright-report`（JUnit、HTML、截图/trace）。E2E 失败时还会收集 Compose 状态和日志；报告保留 14 天。
+- CI 现在覆盖完整应用服务的 Playwright E2E，但仍不部署应用。后续可按团队流程把三个任务设为分支保护的必需检查，并扩展注册、失败路径、移动端视口和跨浏览器场景。
 - 配置通过 actionlint 1.7.12 静态检查；2026-10-15 [首次 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38661508064)（提交 `e7d0ffc`）两个任务均成功。日志确认 72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest 测试和生产构建全部通过，两个测试报告 artifact 均已上传。
-- 2026-10-15 本地复验：72 个快速测试、1 个 Vitest 测试、生产构建通过，`npm ci` 审计为 0 个已知漏洞。Testcontainers 首次运行因 Docker Desktop 未启动失败；启动 Docker 后出现 Secrets Engine 的 `engine.sock` 重命名错误，属于本机环境故障；完整集成测试随后已在 GitHub Ubuntu runner 验证通过。Playwright / Compose 的联合验收仍为 2026-10-14 的记录，本轮未重跑。
+- 2026-10-15 本地复验：72 个快速测试、1 个 Vitest、生产构建和 1 个 Playwright E2E 通过，`npm ci` 审计为 0 个已知漏洞；CI 配置通过 actionlint。新增 E2E 任务的 GitHub 云端结果需在本次提交推送后确认。
 
 ## 本地运行
 
@@ -439,13 +441,12 @@ mvn -o -Pintegration-tests verify
 
 在某些 Windows 权限/文件锁情况下，Maven 可能报 `target\\classes\\application-no-db.yml` 拒绝访问；先确认没有另一个 Maven/IDE 构建占用文件，再重试。不要删除项目目录或数据库来解决这个问题。
 
-## 2026-10-15 本机 Docker Desktop 启动故障
+## 2026-10-15 本机 Docker Desktop 启动故障与恢复
 
 - 启动报错：`initializing Secrets Engine`，`engine.sock` 重命名为 `.stale` 时出现 `The file cannot be accessed by the system`。这发生在 Docker daemon 就绪之前，不是 Flyway 或业务测试失败。
 - 检查时 Docker 进程已经退出；`%LOCALAPPDATA%/docker-secrets-engine` 中仅有一个 0 字节、带 `ReparsePoint` 属性的 `engine.sock`。
-- [Docker 上游同类报告](https://github.com/docker/for-win/issues/15064)提供了保留并重命名整个 socket 父目录、让 Docker 重建的临时解决方法。本轮使用 PowerShell `Rename-Item` 尝试后仍收到 `Access denied`，因此本机尚未恢复，原目录和数据未改动。
-- 后续可在退出 Docker 后，从用户自己的管理员 PowerShell 尝试把这个目录改名备份再启动 Docker；不要直接重置出厂设置、删除数据库卷或注销 Docker 的 WSL 数据发行版。临时目录改名并非上游永久修复。
-- 本次 CI 已在 GitHub Linux runner 完整通过，因此不受该 Windows 本机故障影响。恢复本机 Docker 后可运行 `docker info`、`mvn -Pintegration-tests verify`，再按需启动 Compose。
+- [Docker 上游同类报告](https://github.com/docker/for-win/issues/15064)提供了保留并重命名整个 socket 父目录、让 Docker 重建的临时解决方法。本轮使用 PowerShell `Rename-Item` 尝试时收到 `Access denied`，未改动该目录或 Docker 数据。
+- 用户随后选择 Docker Desktop 恢复出厂设置，Docker Engine 29.8.2 已恢复运行；三个旧 FitPilot 容器仍在停止列表中，`fitpilot_postgres-data` 数据卷也仍存在（创建于 2026-10-14），源码和 Git 工作区未受影响。该操作本次没有清除 FitPilot 数据，但不是保留数据的首选排错方式；以后应先退出 Docker、备份数据并尝试上游的父目录改名方案。
 
 ## 文档与数据注意事项
 
