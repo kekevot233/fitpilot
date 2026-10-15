@@ -6,6 +6,7 @@ import com.fitpilot.dto.food.CalculateFoodNutritionRequest;
 import com.fitpilot.dto.food.CreateFoodRequest;
 import com.fitpilot.dto.food.FoodNutritionCalculationResponse;
 import com.fitpilot.dto.food.FoodResponse;
+import com.fitpilot.dto.food.RecentFoodResponse;
 import com.fitpilot.exception.ResourceConflictException;
 import com.fitpilot.exception.ResourceNotFoundException;
 import com.fitpilot.repository.FoodLogRepository;
@@ -71,9 +72,19 @@ public class FoodService {
     }
 
     @Transactional(readOnly = true)
-    public List<FoodResponse> findRecentlyLoggedFoods(long userId, int limit) {
+    public List<RecentFoodResponse> findRecentlyLoggedFoods(long userId, int limit) {
         return foodLogRepository.findRecentlyLoggedFoods(userId, PageRequest.of(0, limit)).stream()
-                .map(this::toResponse)
+                .map(log -> new RecentFoodResponse(
+                        log.getFood().getId(),
+                        log.getFood().getName(),
+                        log.getFood().getCaloriesPer100g(),
+                        log.getFood().getProteinPer100g(),
+                        log.getFood().getCarbsPer100g(),
+                        log.getFood().getFatPer100g(),
+                        log.getGrams(),
+                        log.getMealType(),
+                        log.getEatenAt()
+                ))
                 .toList();
     }
 

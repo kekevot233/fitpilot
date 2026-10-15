@@ -62,7 +62,7 @@ D:\code\fitapp
 - 今日营养 Dashboard：总热量、蛋白质、碳水、脂肪、剩余目标。
 - 食物搜索、按克数预览、保存饮食记录、编辑 / 删除记录。
 - 食物搜索框默认收起；点击或聚焦时显示悬浮下拉菜单。
-- 空搜索框优先显示当前用户最近记录的食物；首次使用时提示搜索食物库。
+- 空搜索框优先显示当前用户最近记录的食物；选择后自动带入上次克数和餐次，首次使用时提示搜索食物库。
 - 七日热量趋势：实际摄入柱状图、当天目标线、平均摄入和有效记录天数。
 - 自定义食物创建。
 - 主界面调整饮食计划（减脂 / 维持 / 轻盈增肌），从今天生效并保留历史目标。
@@ -226,18 +226,20 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - `mvn -Pintegration-tests verify` 先运行快速测试，再由 Maven Failsafe 执行 `*IT` 集成测试。
 - Testcontainers 启动临时 `postgres:17-alpine`，Spring Boot 的 `@ServiceConnection` 自动注入 JDBC 连接；测试结束后 Ryuk 自动清理容器。
 - 集成测试关闭 Flyway 自动基线，从真正的空库执行 V1 → V2 → V3，并让 Hibernate `validate` 检查实体映射。
-- 断言内容：迁移版本必须恰好为 1、2、3；必须存在 9 张业务表；`food_logs` 五个营养快照字段必须为 `NOT NULL`；默认食物必须初始化为 85 个。
+- 断言内容：迁移版本必须恰好为 1、2、3；必须存在 9 张业务表；`food_logs` 五个营养快照字段必须为 `NOT NULL`；默认食物必须初始化为 85 个；最近食物查询必须对同一种食物只返回最新一条份量和餐次。
 - Failsafe 测试 JVM 固定 `api.version=1.40`，用于兼容 Docker Desktop 29 的最低 API 限制，只影响集成测试。
-- 最近验证：72 个快速测试全部通过；1 个 PostgreSQL 集成测试通过。测试数据库为 Docker 临时库，没有连接或修改本地 `fitpilot` 数据库。
+- 集成套件现有 2 个 PostgreSQL 测试。2026-10-15 本轮本机 Docker Desktop 不可用，新增的最近份量查询用例将在 GitHub Actions 的 Docker 环境复验；此前迁移用例已在 CI 通过。测试数据库为 Docker 临时库，不会连接或修改本地 `fitpilot` 数据库。
 
 ## 最近使用食物（已实现）
 
-食物搜索框为空且被点击时，网页会请求 `GET /api/me/foods/recent?limit=6`，展示当前登录用户最近记录过的不同食物；按最新一次记录时间倒序。这样用户可以一键重复记录常吃的米饭、豆浆或鸡腿饭，而无需每次搜索。
+食物搜索框为空且被点击时，网页会请求 `GET /api/me/foods/recent?limit=6`，展示当前登录用户最近记录过的不同食物；按最新一次记录时间倒序。每个选项显示上次克数和餐次，点击后自动填入这两个字段，用户确认营养后再保存，减少重复输入且避免误触直接记账。
 
 - `RecentFoodController` 从 JWT 获取用户 ID，`limit` 限制为 1–12；接口受 Bearer Token 保护。
-- `FoodLogRepository.findRecentlyLoggedFoods` 通过食物分组与最近用餐时间排序去重。
+- 返回模型为 `RecentFoodResponse`：保留原有食物营养字段，并增加 `lastGrams`、`lastMealType`、`lastEatenAt`，属于兼容性的 JSON 字段扩展。
+- `FoodLogRepository.findRecentlyLoggedFoods` 使用反连接查询，为每种启用食物保留最新一条记录；相同用餐时间再按记录 ID 决定最新项，并继续隔离当前用户。
 - 前端在成功写入饮食记录后刷新最近列表；没有历史数据时显示友好引导，而非展示完整食物库。
-- 验证：前端 `npm run build` 成功；后端 `mvn -o test` 共 36 项通过。
+- 普通关键词搜索仍只选择食物，不会覆盖用户已经输入的份量或餐次；只有“最近记录”选项带入历史值。
+- 验证：后端 72 个快速测试通过；前端 2 个 Vitest 流程测试和 `npm run build` 通过。真实 PostgreSQL 查询场景已加入 Testcontainers 套件，本机受 Docker Desktop 状态阻塞，等待 CI 复验。
 
 ## 七日饮食趋势（已实现）
 
@@ -266,17 +268,18 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 ## 网页核心流程测试（已实现）
 
-网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，并加入一条跨组件主流程测试。
+网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，并包含两条跨组件流程测试。
 
 - 测试文件：`web/src/App.core-flow.test.tsx`。
 - 测试环境初始化：`web/src/test/setup.ts`。
 - 配置：`web/vite.config.ts` 的 `test` 区块；命令来自 `web/package.json` 的 `test` 和 `test:watch`。
 - 覆盖流程：从未登录页面填写邮箱和密码 → 保存 access token → 加载 Dashboard → 搜索并选择熟米饭 → 输入 200g 和午餐 → 预览营养 → 保存饮食记录 → 切换为减脂计划。
+- 第二条流程从已有饮食记录生成“最近记录”响应，验证页面显示“上次 280g · 晚餐”，选择后克数和餐次均自动带入。
 - 测试通过全局 `fetch` stub 保留真实 `api.ts` 的调用路径，验证登录请求、饮食记录请求和计划更新请求的 HTTP 方法与 JSON；同时验证登录后的请求包含 `Authorization: Bearer test-access-token`。
 - 测试后端是内存中的确定性响应，不连接 8080 或 PostgreSQL。它验证 React 页面协作和前端 API 契约；真实 SQL/Flyway 由后端 Testcontainers 测试负责。
-- 这条测试使用内存响应，适合快速、稳定地定位 React 组件协作和 API 契约问题；真实部署链路由下一节的 Playwright 测试补足。
+- 这些测试使用内存响应，适合快速、稳定地定位 React 组件协作和 API 契约问题；真实部署链路由下一节的 Playwright 测试补足。
 - 新增依赖后发现的 `source-map-js 1.2.1` 审计问题已升级到 1.2.2；最近一次 npm 审计为 0 个已知漏洞。
-- 最近验证：`npm test` 为 1 个测试通过；`npm run build` 通过。
+- 最近验证：`npm test` 为 2 个测试通过；`npm run build` 通过。
 
 ## Playwright 真实浏览器端到端测试（已实现）
 
@@ -450,7 +453,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-最近一次已通过：前端 `1` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `1` 个 PostgreSQL Testcontainers 集成测试全部通过；现有 PostgreSQL V3 基线接管、临时空库 V1 → V3、三容器开发 Compose 和单服务生产 Compose 均验证成功；npm 审计为 0 个已知漏洞。生产镜像本地复验桌面与手机 Chromium 6 项通过；GitHub Ubuntu runner 随后确认包含 Firefox 在内的 9 项全部通过。
+最近一次本机验证：前端 `2` 个 Vitest 核心流程测试和生产构建成功；后端 `72` 个快速测试通过。本轮 Testcontainers 因 Docker Desktop 当前不可用而未能在本机启动，新增真实 PostgreSQL 查询用例等待 GitHub Actions 复验。上一轮 CI 已确认 1 个迁移集成测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项、生产镜像和 npm 0 个已知漏洞。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 

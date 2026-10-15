@@ -1,7 +1,6 @@
 package com.fitpilot.repository;
 
 import com.fitpilot.domain.FoodLog;
-import com.fitpilot.domain.Food;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -30,15 +29,25 @@ public interface FoodLogRepository extends JpaRepository<FoodLog, Long> {
             LocalDateTime end
     );
 
+    @EntityGraph(attributePaths = "food")
     @Query("""
-            select log.food
+            select log
             from FoodLog log
             where log.user.id = :userId
               and (log.food.active is null or log.food.active = true)
-            group by log.food
-            order by max(log.eatenAt) desc
+              and not exists (
+                  select newer.id
+                  from FoodLog newer
+                  where newer.user.id = :userId
+                    and newer.food = log.food
+                    and (
+                        newer.eatenAt > log.eatenAt
+                        or (newer.eatenAt = log.eatenAt and newer.id > log.id)
+                    )
+              )
+            order by log.eatenAt desc, log.id desc
             """)
-    List<Food> findRecentlyLoggedFoods(
+    List<FoodLog> findRecentlyLoggedFoods(
             @Param("userId") Long userId,
             Pageable pageable
     );

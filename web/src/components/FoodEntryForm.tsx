@@ -7,7 +7,7 @@ import {
   getRecentFoods,
   searchFoods,
 } from '../api'
-import type { AiNutritionEstimate, Food, FoodCalculation, MealType } from '../types'
+import type { AiNutritionEstimate, Food, FoodCalculation, MealType, RecentFood } from '../types'
 
 type Props = {
   userId: number
@@ -28,6 +28,12 @@ const confidenceLabels: Record<AiNutritionEstimate['confidence'], string> = {
   HIGH: '较高可信度',
 }
 
+type FoodOption = Food | RecentFood
+
+function isRecentFood(food: FoodOption): food is RecentFood {
+  return 'lastGrams' in food
+}
+
 function eatenAtFor(date: string) {
   const now = new Date()
   const hours = String(now.getHours()).padStart(2, '0')
@@ -37,7 +43,7 @@ function eatenAtFor(date: string) {
 
 export function FoodEntryForm({ userId, date, onSaved }: Props) {
   const [keyword, setKeyword] = useState('')
-  const [foods, setFoods] = useState<Food[]>([])
+  const [foods, setFoods] = useState<FoodOption[]>([])
   const [selectedFood, setSelectedFood] = useState<Food | null>(null)
   const [grams, setGrams] = useState('')
   const [mealType, setMealType] = useState<MealType>('LUNCH')
@@ -76,9 +82,13 @@ export function FoodEntryForm({ userId, date, onSaved }: Props) {
     }
   }, [keyword, foodListVersion])
 
-  function chooseFood(food: Food) {
+  function chooseFood(food: FoodOption) {
     setSelectedFood(food)
     setKeyword(food.name)
+    if (isRecentFood(food)) {
+      setGrams(String(food.lastGrams))
+      setMealType(food.lastMealType)
+    }
     setPreview(null)
     setAiEstimate(null)
     setError('')
@@ -290,11 +300,15 @@ export function FoodEntryForm({ userId, date, onSaved }: Props) {
               <p className="muted">正在查找食物…</p>
             ) : foods.length > 0 ? (
               <>
-                {!keyword.trim() && <p className="food-options-title">最近记录</p>}
+                {!keyword.trim() && <p className="food-options-title">最近记录 · 点击带入上次份量</p>}
                 {foods.slice(0, 6).map((food) => (
                   <button type="button" role="option" key={food.id} onClick={() => chooseFood(food)}>
                     <span>{food.name}</span>
-                    <small>{food.caloriesPer100g} kcal / 100g</small>
+                    <small>
+                      {isRecentFood(food)
+                        ? `上次 ${food.lastGrams}g · ${mealLabels[food.lastMealType]}`
+                        : `${food.caloriesPer100g} kcal / 100g`}
+                    </small>
                   </button>
                 ))}
               </>

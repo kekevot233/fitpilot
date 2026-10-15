@@ -49,7 +49,7 @@ FitPilot 是一个面向健身新手、大学生和日常健身用户的饮食�
 - 饮食记录新增、修改、删除和复制前一天记录。
 - 饮食记录保存录入时的食物名称和每 100g 营养快照；之后修改食物模板不会改变历史数据。
 - 按早餐、午餐、晚餐、加餐分组，并显示每餐热量与三大营养素小计。
-- 最近食物快捷入口。
+- 最近食物快捷入口会显示并自动带入上次克数与餐次，确认后即可再次记录。
 - 用户自定义食物的创建、查询、修改和归档。
 - 自定义食物按用户隔离，不会出现在其他用户的食物库中。
 - 可选的大模型营养估算；用户确认或修正结果后再保存。
@@ -97,14 +97,15 @@ Java 21 + Spring Boot 单体后端
 - **精确表示营养数值**：重量和营养数据使用 `BigDecimal`，减少浮点误差。
 - **内置与自定义食物共用模型**：内置食物的 `owner_id` 为空，自定义食物关联创建者，兼顾统一查询与用户隔离。
 - **归档代替直接删除**：自定义食物使用 `active=false` 软删除，避免破坏已经存在的饮食记录。
+- **复用最近一次录入习惯**：最近食物接口在多用户隔离与去重基础上返回上次克数、餐次和时间，网页自动填入但保留营养确认步骤，减少重复操作并避免误记。
 - **事务保证批量操作一致性**：复制某日饮食、修改资料并重算目标等多步写入在事务内完成。
 - **聚合交给后端、展示交给前端**：跨日期趋势由后端聚合；每餐小计等当前页面派生数据在前端计算。
 
 ## 当前质量基线
 
 - `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-15 [生产镜像 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38691020518)全部通过，并生成三类测试报告。
-- 后端测试：72 个快速单元 / MVC 测试通过；1 个 PostgreSQL Testcontainers 集成测试通过。
-- 前端测试：1 个 Vitest 跨组件流程测试；Playwright 有注册、错误登录和核心饮食 3 个场景，在桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共形成 9 个执行项；TypeScript 检查和 Vite 生产构建通过。
+- 后端测试：72 个快速单元 / MVC 测试通过；Testcontainers 套件现有 2 个 PostgreSQL 集成测试，覆盖空库迁移和最近份量去重查询。本轮本机 Docker Desktop 不可用，新增用例等待 CI 复验。
+- 前端测试：2 个 Vitest 跨组件流程测试，覆盖核心饮食流程和最近份量自动填入；Playwright 有注册、错误登录和核心饮食 3 个场景，在桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共形成 9 个执行项；TypeScript 检查和 Vite 生产构建通过。
 - npm 依赖审计：0 个已知漏洞。
 - Docker Compose 三容器开发环境联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。
 - 单服务生产镜像联合验收通过：production profile 使用 Render 风格 `connectionString` 连接独立 PostgreSQL，健康、首页、静态资源与 OpenAPI 返回成功，未登录业务 API 返回 401；桌面和手机 Chromium 6 项通过。

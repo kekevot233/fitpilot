@@ -183,7 +183,12 @@ function installBackendStub() {
     }
 
     if (method === 'GET' && url.pathname === '/api/me/foods/recent') {
-      return json(foodLogs.length > 0 ? [rice] : [])
+      return json(foodLogs.length > 0 ? [{
+        ...rice,
+        lastGrams: foodLogs[0].grams,
+        lastMealType: foodLogs[0].mealType,
+        lastEatenAt: foodLogs[0].eatenAt,
+      }] : [])
     }
 
     if (method === 'GET' && url.pathname === '/api/foods') {
@@ -310,5 +315,31 @@ describe('FitPilot 核心饮食流程', () => {
       authorization: 'Bearer test-access-token',
       body: { goal: 'FAT_LOSS' },
     })
+  })
+
+  it('从最近记录带入上次份量和餐次', async () => {
+    foodLogs = [{
+      id: 100,
+      foodId: rice.id,
+      foodName: rice.name,
+      grams: 280,
+      mealType: 'DINNER',
+      eatenAt: `${today}T18:30:00`,
+      nutrition: { calories: 364, protein: 7.56, carbs: 78.96, fat: 0.84 },
+    }]
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.type(screen.getByLabelText('邮箱'), 'zhengyi@example.com')
+    await user.type(screen.getByLabelText('密码'), 'FitPilot123')
+    await user.click(screen.getByRole('button', { name: '登录 FitPilot' }))
+
+    const foodSearch = await screen.findByLabelText('食物名称')
+    await user.click(foodSearch)
+    expect(await screen.findByText('上次 280g · 晚餐')).toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /熟米饭/ }))
+
+    expect(screen.getByLabelText('食用克数')).toHaveValue(280)
+    expect(screen.getByLabelText('餐次')).toHaveValue('DINNER')
   })
 })

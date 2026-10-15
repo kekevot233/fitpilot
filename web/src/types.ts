@@ -14,6 +14,12 @@ export type Food = {
   fatPer100g: number
 }
 
+export type RecentFood = Food & {
+  lastGrams: number
+  lastMealType: MealType
+  lastEatenAt: string
+}
+
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK'
 
 export type FoodCalculation = {

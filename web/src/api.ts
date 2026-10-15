@@ -1,6 +1,7 @@
 import type {
   DailyDashboard,
   Food,
+  RecentFood,
   FoodCalculation,
   FoodLog,
   MealType,
@@ -139,7 +140,7 @@ export function searchFoods(keyword: string) {
 }
 
 export function getRecentFoods(limit = 6) {
-  return request<Food[]>(`/api/me/foods/recent?limit=${limit}`)
+  return request<RecentFood[]>(`/api/me/foods/recent?limit=${limit}`)
 }
 
 export function createFood(input: {

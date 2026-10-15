@@ -1,6 +1,6 @@
 package com.fitpilot.controller;
 
-import com.fitpilot.dto.food.FoodResponse;
+import com.fitpilot.dto.food.RecentFoodResponse;
 import com.fitpilot.service.FoodService;
 import com.fitpilot.service.UserAccessGuard;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,7 +35,7 @@ public class RecentFoodController {
 
     @GetMapping("/recent")
     @Operation(summary = "查询当前用户最近记录的食物")
-    public List<FoodResponse> recent(
+    public List<RecentFoodResponse> recent(
             @RequestParam(defaultValue = "6") @Min(1) @Max(12) int limit) {
         return foodService.findRecentlyLoggedFoods(userAccessGuard.currentUserId(), limit);
     }
