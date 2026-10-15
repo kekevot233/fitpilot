@@ -1,0 +1,16 @@
+.git
+.github
+.m2
+.env
+.env.*
+!.env.example
+
+backend/target
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report
+web/coverage
+
+docs
+mobile

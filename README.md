@@ -8,10 +8,13 @@ FitPilot 是一个面向健身新手和日常健身用户的饮食与训练规�
 
 ```text
 fitpilot/
-├── backend/     # Spring Boot REST API
-├── web/         # React + TypeScript + Vite 网页端
-├── mobile/      # React Native + Expo（已暂停，后续实现）
-└── docs/        # 项目设计与开发笔记
+├── backend/            # Spring Boot REST API
+├── web/                # React + TypeScript + Vite 网页端
+├── deploy/             # 生产容器启动脚本
+├── mobile/             # React Native + Expo（已暂停，后续实现）
+├── docs/               # 项目设计与开发笔记
+├── Dockerfile          # React + Spring Boot 单服务生产镜像
+└── render.yaml         # Render Web Service + PostgreSQL Blueprint
 ```
 
 ## One-command local environment (Docker)
@@ -37,6 +40,21 @@ docker compose down
 ```
 
 PostgreSQL 数据保存在 Docker 命名卷中，普通 `down` 后仍会保留，而且与电脑上原有的 PostgreSQL 数据库完全隔离。只有明确想清空容器数据库时才使用 `docker compose down --volumes`。
+
+## Production deployment topology
+
+公开演示环境使用根目录 `Dockerfile`：先构建 React，再把静态文件打进 Spring Boot JAR，由一个非 root Java 容器同时提供网页和同源 `/api`。这减少了托管环境中的服务数量，也不需要为浏览器配置跨域地址。`/actuator/health` 是公开健康端点，其余业务 API 继续要求 JWT。
+
+本地可以用独立端口和独立数据卷复现生产拓扑：
+
+```powershell
+$env:WEB_PORT = "5174"
+docker compose -f compose.deploy.yaml up --build --wait
+```
+
+访问 `http://localhost:5174`，停止并删除这套临时环境可运行 `docker compose -f compose.deploy.yaml down --volumes`。它与上面的日常三容器开发环境互不共用数据库卷。
+
+根目录 `render.yaml` 可在 Render 中创建一个 Docker Web Service 和一个仅允许私网连接的 PostgreSQL 17 数据库。Blueprint 会生成 JWT 密钥，并通过 Render 的 `connectionString` 注入数据库连接；可选的 `AI_API_KEY` 需要部署后在 Dashboard 中另行配置。当前仓库已经具备部署配置，但尚未创建公开线上实例；正式保存真实用户数据前仍需确定数据库备份与恢复策略。配置格式依据 [Render Blueprint 官方规范](https://render.com/docs/blueprint-spec)。
 
 ## Manual development mode
 
@@ -107,7 +125,7 @@ mvn -Pintegration-tests verify
 
 - 后端：Java 21 + Maven 快速测试、Testcontainers PostgreSQL 集成测试和打包。
 - 前端：Node.js 22 + `npm ci`、Vitest、TypeScript 检查和 Vite 生产构建。
-- 端到端：前两项通过后，用 Docker Compose 启动 PostgreSQL、Spring Boot 和 Nginx/React，再由桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 验证注册、登录失败及核心饮食流程。
+- 端到端：前两项通过后，用 Docker Compose 启动与 Render 相同的单服务生产镜像和 PostgreSQL，再由桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 验证注册、登录失败及核心饮食流程。
 
 后端、前端和 Playwright 报告在运行页面的 Artifacts 中保留 14 天；E2E 失败时还会保存容器状态和日志。CI 使用临时数据库卷，不需要配置应用密钥或外部数据库，并在结束时自动清理。配置和排错说明见[开发交接文档](docs/HANDOFF.md#github-actions-ci已接入)。
 

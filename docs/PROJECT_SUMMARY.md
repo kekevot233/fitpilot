@@ -76,7 +76,7 @@ Java 21 + Spring Boot 单体后端
           PostgreSQL
 ```
 
-- 后端：Java 21、Maven、Spring Boot 3.4.5、Spring Web、Validation、Spring Data JPA、Spring Security、Flyway、springdoc-openapi。
+- 后端：Java 21、Maven、Spring Boot 3.4.5、Spring Web、Validation、Spring Data JPA、Spring Security、Actuator、Flyway、springdoc-openapi。
 - 前端：React、TypeScript、Vite。
 - 数据库：PostgreSQL。
 - 架构选择：MVP 阶段使用结构清晰的单体应用，不提前引入微服务、消息队列或复杂 Agent 编排。
@@ -89,9 +89,11 @@ Java 21 + Spring Boot 单体后端
 - **数据库结构版本化**：Flyway 按 V1、V2、V3 管理建表与结构升级，Hibernate 只校验实体映射，不再自动修改数据库。
 - **真实数据库回归测试**：Testcontainers 在 Docker 临时 PostgreSQL 17 中从空库执行全部 Flyway 迁移，并验证表结构、约束与初始化数据，不依赖开发者本地数据库状态。
 - **网页核心流程回归测试**：Vitest、Testing Library 和 jsdom 从登录界面驱动“登录 → 搜索并记录食物 → 切换减脂计划”，同时校验 REST 路径、请求体和 JWT 请求头。
-- **真实浏览器端到端测试**：Playwright 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 连接实际 Nginx、Spring Boot 与 PostgreSQL，覆盖注册、错误登录及“记录食物 → 调整计划”，并在结束后清理临时饮食记录。
-- **容器化运行环境**：Docker Compose 编排 PostgreSQL、Spring Boot 与 Nginx/React；数据库健康后再启动后端，后端健康后再启动网页。浏览器只访问同源 `/api`，由开发期 Vite 或容器内 Nginx 反向代理到后端。
-- **持续集成**：GitHub Actions 先并行运行后端快速测试 / Testcontainers PostgreSQL 集成测试和前端 Vitest / TypeScript 检查 / 生产构建，再用 Docker Compose + Playwright 验证桌面、移动端及跨浏览器真实链路；保留三类测试报告和失败诊断。
+- **真实浏览器端到端测试**：Playwright 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 连接实际生产镜像与 PostgreSQL，覆盖注册、错误登录及“记录食物 → 调整计划”，并在结束后清理临时饮食记录。
+- **开发与生产拓扑分离**：日常 Docker Compose 继续使用 PostgreSQL、Spring Boot 与 Nginx/React，方便独立开发；根目录生产镜像把 React 静态资源打入 Spring Boot JAR，一个非 root Java 容器同时提供网页和同源 `/api`。
+- **基础设施即代码**：`render.yaml` 定义 Docker Web Service 与私网 PostgreSQL 17，自动生成 JWT 密钥；production profile 禁止 Flyway 自动基线，新数据库必须执行完整版本迁移。
+- **可观测部署健康**：Actuator 只公开 `/actuator/health`，Docker 和 Render 使用同一路径检查应用与数据库就绪状态，业务 API 的 JWT 边界保持不变。
+- **持续集成**：GitHub Actions 先并行运行后端快速测试 / Testcontainers PostgreSQL 集成测试和前端 Vitest / TypeScript 检查 / 生产构建，再构建实际部署镜像并用 Playwright 验证桌面、移动端及跨浏览器真实链路；保留三类测试报告和失败诊断。
 - **精确表示营养数值**：重量和营养数据使用 `BigDecimal`，减少浮点误差。
 - **内置与自定义食物共用模型**：内置食物的 `owner_id` 为空，自定义食物关联创建者，兼顾统一查询与用户隔离。
 - **归档代替直接删除**：自定义食物使用 `active=false` 软删除，避免破坏已经存在的饮食记录。
@@ -104,7 +106,8 @@ Java 21 + Spring Boot 单体后端
 - 后端测试：72 个快速单元 / MVC 测试通过；1 个 PostgreSQL Testcontainers 集成测试通过。
 - 前端测试：1 个 Vitest 跨组件流程测试；Playwright 有注册、错误登录和核心饮食 3 个场景，在桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共形成 9 个执行项；TypeScript 检查和 Vite 生产构建通过。
 - npm 依赖审计：0 个已知漏洞。
-- Docker Compose 三容器联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。
+- Docker Compose 三容器开发环境联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。
+- 单服务生产镜像联合验收通过：production profile 使用 Render 风格 `connectionString` 连接独立 PostgreSQL，健康、首页、静态资源与 OpenAPI 返回成功，未登录业务 API 返回 401；桌面和手机 Chromium 6 项通过。
 - 从全新容器数据库启动时，Flyway 自动完成 V1 → V2 → V3，初始化 85 个食物；真实链路已验证“登录 → 搜索熟米饭 → 记录 200g → Dashboard 显示 260 kcal → 切换减脂计划并重算目标”。
 - 后端能够连接真实 PostgreSQL 启动；现有数据库 V3 基线接管，以及 Docker 临时空库从 V1 到 V3 的完整迁移均已验证。
 - Swagger UI 提供接口文档和手动测试入口。
@@ -115,20 +118,21 @@ Java 21 + Spring Boot 单体后端
 
 ## 已知限制与技术债
 
-- 为兼容开发早期已经存在的数据库，暂时启用了 Flyway `baseline-on-migrate`；确认所有部署环境均被接管后应关闭自动基线。
+- 默认配置为兼容开发早期数据库仍启用 Flyway `baseline-on-migrate`；production profile 已明确关闭自动基线。后续确认所有本地旧库都被 Flyway 接管后，可从默认配置移除兼容开关。
 - 当前受 Spring Boot 管理的 Flyway 10.20.1 在 PostgreSQL 18.6 上运行成功，但会提示官方测试范围到 PostgreSQL 17，后续依赖升级需要再次验证。
 - JWT 保存在浏览器本地存储中，尚未实现 refresh token、主动注销失效和更完善的生产安全策略。
-- CI 已覆盖后端、数据库迁移、前端测试 / 构建，以及 Chromium、Firefox 和手机视口真实链路；仍未接入自动部署或 WebKit。
+- CI 已覆盖后端、数据库迁移、前端测试 / 构建、生产镜像，以及 Chromium、Firefox 和手机视口真实链路；Render Blueprint 已就绪，但仍未接入自动部署或 WebKit。
 - 浏览器自动化已覆盖注册、错误密码和核心饮食流程，但尚未覆盖接口超时/重试、WebKit、视觉回归和无障碍检查；也尚无线上监控和公开演示环境。
 - AI 营养估算是可选辅助能力，结果受菜品做法和模型输出影响，不能视为权威营养数据。
 - 拍照识别食物、移动端、HealthKit 和完整训练体验尚未实现。
 
 ## 下一阶段优先级
 
-1. 选择托管平台并发布公开演示环境，补齐生产环境变量、HTTPS 和数据库备份策略。
-2. 扩展 Playwright 的接口超时/重试、WebKit、视觉回归和无障碍检查。
-3. 改进认证安全，包括更合理的 token 生命周期、refresh token 与注销策略。
-4. 稳定饮食 MVP 后，再继续训练模块或拍照识别。
+1. 在 Render 从现有 Blueprint 创建公开演示环境，验证自动 HTTPS、首次迁移和冷启动，并确定数据库备份 / 恢复策略。
+2. 将已验证的生产镜像增加受控自动部署步骤，确保只在测试全部通过后发布。
+3. 扩展 Playwright 的接口超时/重试、WebKit、视觉回归和无障碍检查。
+4. 改进认证安全，包括更合理的 token 生命周期、refresh token 与注销策略。
+5. 稳定饮食 MVP 后，再继续训练模块或拍照识别。
 
 ## 作品集价值
 

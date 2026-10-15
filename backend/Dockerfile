@@ -22,6 +22,6 @@ USER fitpilot
 EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=6 \
-  CMD wget -q -O /dev/null http://localhost:8080/v3/api-docs || exit 1
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/actuator/health || exit 1
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

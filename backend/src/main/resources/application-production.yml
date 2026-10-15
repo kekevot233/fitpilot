@@ -1,0 +1,5 @@
+spring:
+  flyway:
+    # Production databases must be created through versioned migrations. This
+    # prevents an unexpected non-empty schema from being silently baselined.
+    baseline-on-migrate: false

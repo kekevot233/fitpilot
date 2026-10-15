@@ -19,7 +19,20 @@ spring:
     baseline-description: Hibernate schema before Flyway
 
 server:
-  port: ${SERVER_PORT:8080}
+  # Render and similar platforms provide PORT. SERVER_PORT remains available
+  # for local or self-hosted overrides.
+  port: ${PORT:${SERVER_PORT:8080}}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
 
 springdoc:
   swagger-ui:
@@ -36,6 +49,6 @@ fitpilot:
     timeout-seconds: ${AI_TIMEOUT_SECONDS:25}
   security:
     jwt:
-      issuer: https://fitpilot.local
+      issuer: ${JWT_ISSUER:https://fitpilot.local}
       secret: ${JWT_SECRET:fitpilot-local-development-secret-change-before-production-2026}
       expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}

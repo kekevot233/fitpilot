@@ -281,7 +281,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 ## Playwright 真实浏览器端到端测试（已实现）
 
 - 测试文件：`web/e2e/nutrition-core-flow.spec.ts`、`web/e2e/auth-flow.spec.ts`；配置：`web/playwright.config.ts`。
-- 连接正在运行的 `http://127.0.0.1:5173`，实际经过 Nginx `/api` 代理、Spring Boot 和容器 PostgreSQL，不使用 fetch stub。
+- 连接正在运行的 `http://127.0.0.1:5173`，不使用 fetch stub。本地开发 Compose 经过 Nginx、Spring Boot 和 PostgreSQL；CI 则连接把 React 静态文件打入 Spring Boot JAR 的生产镜像和 PostgreSQL。
 - 覆盖三类场景：错误密码返回 401 且不保存 token；从完整注册表单创建账户并生成轻盈增肌目标；登录后搜索熟米饭、记录 137g 午餐并切换饮食计划。
 - 测试通过 API 幂等准备专用账户；`finally` 中删除本轮饮食记录，失败时也尽量避免污染后续运行。计划在减脂与维持之间交替，不额外执行“恢复”写入，因为每次计划更新都会形成一条具有业务意义的历史目标版本。
 - Playwright 与 Vitest 分工明确：`vite.config.ts` 只扫描 `src/**/*.test.ts(x)`，避免把 `e2e/*.spec.ts` 误交给 Vitest。
@@ -295,14 +295,28 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 工作流包含三个 `ubuntu-24.04` 任务：后端与前端先并行，二者通过后再运行端到端任务：
   - `Backend tests and PostgreSQL integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 72 个快速测试，Failsafe 执行 1 个 `*IT` 测试并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
   - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。
-  - `Playwright end-to-end`：安装 Chromium、Firefox 与系统依赖，执行 `docker compose up --build --detach --wait`，再运行 `npm run test:e2e`。它经过 Nginx、Spring Boot 和 PostgreSQL 验证真实页面流程；无论成功失败都执行 `docker compose down --volumes --remove-orphans`。
+  - `Playwright end-to-end`：安装 Chromium、Firefox 与系统依赖，执行 `docker compose -f compose.deploy.yaml up --build --detach --wait`，再运行 `npm run test:e2e`。它验证与 Render 相同的单服务生产镜像和 PostgreSQL；无论成功失败都用相同 Compose 文件删除容器和临时数据卷。
 - 后端任务直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine`；E2E 任务另起完整 Compose 环境，并使用仅限该临时环境的数据库密码和 JWT secret。两者都不访问开发者数据库，也不需要仓库 secrets。
 - Maven 缓存按 `backend/pom.xml`、npm 缓存按 `web/package-lock.json` 配置；`npm ci` 严格使用锁文件，不缓存 `node_modules`。
 - 工作流只授予 `contents: read`，checkout 不保留凭据；官方 Actions 固定到完整 commit SHA。后端超时 20 分钟、前端超时 10 分钟、E2E 超时 25 分钟；同一分支或 PR 的新运行会取消旧运行。
 - 未取消的运行会上传 `backend-test-reports`（Surefire/Failsafe）、`frontend-test-reports`（Vitest JUnit）和 `playwright-report`（JUnit、HTML、截图/trace）。E2E 失败时还会收集 Compose 状态和日志；报告保留 14 天。
-- CI 现在覆盖完整应用服务的注册、错误登录和核心饮食 Playwright E2E，并包含桌面 Chromium、桌面 Firefox 与手机尺寸。它仍不部署应用；后续可增加接口故障重试、WebKit 和无障碍检查，并按团队流程把三个任务设为分支保护的必需检查。
+- CI 现在覆盖完整应用服务的注册、错误登录和核心饮食 Playwright E2E，并包含桌面 Chromium、桌面 Firefox 与手机尺寸。它构建并验证可直接部署的生产镜像，但不会自动创建或更新线上资源；后续可增加 Render 部署阶段、接口故障重试、WebKit 和无障碍检查，并按团队流程把三个任务设为分支保护的必需检查。
 - 配置通过 actionlint 1.7.12 静态检查；2026-10-15 [首次 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38661508064)（提交 `e7d0ffc`）两个任务均成功。日志确认 72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest 测试和生产构建全部通过，两个测试报告 artifact 均已上传。
 - 2026-10-15 [跨浏览器 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38669167886)（提交 `cdfef0c`）三个任务全部通过：72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest、生产构建和 9 个 Playwright 执行项；`backend-test-reports`、`frontend-test-reports`、`playwright-report` 均已上传。
+
+## 生产部署准备（已实现，尚未上线）
+
+- 根目录 `Dockerfile` 使用三阶段构建：Node 22 构建 React，Maven / Java 21 构建包含静态资源的 Spring Boot JAR，最终由非 root `fitpilot` 用户运行 JRE 镜像。
+- 浏览器继续访问同源 `/api`。生产环境不需要 Nginx 或 CORS 配置，一个 Web Service 即可同时提供网页和 API。
+- Spring Boot Actuator 仅公开 `/actuator/health`，Docker 与 Render 都使用该路径判断数据库和应用是否就绪。首页、构建后的 `/assets/**` 和 Swagger 可公开访问，其余业务 API 仍要求 JWT。
+- `application.yml` 同时支持托管平台的 `PORT` 和本地 `SERVER_PORT`；`JWT_ISSUER` 可通过环境变量覆盖。
+- `application-production.yml` 关闭 `baseline-on-migrate`。新的生产数据库必须从 V1 开始执行全部迁移，不能把意外存在的 schema 静默登记为 V3；本地早期数据库仍保留兼容基线。
+- Render 官方 Blueprint 只允许 PostgreSQL 引用 `connectionString`、`user`、`password`、`database` 等属性。根目录 `render.yaml` 使用这些受支持字段，生成 JWT 密钥，并把数据库限制为私网访问。
+- `deploy/entrypoint.sh` 把 Render 的 `postgresql://user:password@host:port/database` 转换为 JDBC URL；用户名和密码仍由独立环境变量传入，不把秘密拼进 JDBC URL。
+- `compose.deploy.yaml` 用一个应用容器加 PostgreSQL 在本机复现 Render 拓扑，默认映射到 5173，也可用 `WEB_PORT` 改成独立端口。它使用独立项目名和数据卷，不会接触日常 `fitpilot_postgres-data`。
+- `.dockerignore` 排除 Git、Maven 缓存、`node_modules`、构建产物和文档，避免 Windows 依赖覆盖容器内依赖并缩小构建上下文。
+- 2026-10-15 本机使用端口 25174 和隔离项目 `fitpilot-deploy-check` 验证：production profile、Render connectionString 转换、Flyway V1 → V3、85 个内置食物、健康端点、首页、JS 资源和 OpenAPI 均正常；未登录业务 API 返回 401；桌面与手机 Chromium 6 项 Playwright 全部通过。
+- 线上资源尚未创建。下一步是在 Render Dashboard 从 `render.yaml` 创建 Blueprint，验证自动 HTTPS，再确定真实用户数据的备份与恢复策略；可选 `AI_API_KEY` 应在部署后单独配置，不能提交到 Git。
 
 ## 本地运行
 
@@ -435,7 +449,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-最近一次已通过：前端 `1` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `1` 个 PostgreSQL Testcontainers 集成测试全部通过；现有 PostgreSQL V3 基线接管、临时空库 V1 → V3 以及 Docker Compose 空库 V1 → V3 均验证成功；npm 审计为 0 个已知漏洞。
+最近一次已通过：前端 `1` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `1` 个 PostgreSQL Testcontainers 集成测试全部通过；现有 PostgreSQL V3 基线接管、临时空库 V1 → V3、三容器开发 Compose 和单服务生产 Compose 均验证成功；npm 审计为 0 个已知漏洞。生产镜像本地复验桌面与手机 Chromium 6 项通过，完整 Firefox 组合等待本次提交后的 GitHub CI 确认。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
@@ -446,7 +460,10 @@ mvn -o -Pintegration-tests verify
 - 启动报错：`initializing Secrets Engine`，`engine.sock` 重命名为 `.stale` 时出现 `The file cannot be accessed by the system`。这发生在 Docker daemon 就绪之前，不是 Flyway 或业务测试失败。
 - 检查时 Docker 进程已经退出；`%LOCALAPPDATA%/docker-secrets-engine` 中仅有一个 0 字节、带 `ReparsePoint` 属性的 `engine.sock`。
 - [Docker 上游同类报告](https://github.com/docker/for-win/issues/15064)提供了保留并重命名整个 socket 父目录、让 Docker 重建的临时解决方法。本轮使用 PowerShell `Rename-Item` 尝试时收到 `Access denied`，未改动该目录或 Docker 数据。
-- 用户随后选择 Docker Desktop 恢复出厂设置，Docker Engine 29.8.2 已恢复运行；三个旧 FitPilot 容器仍在停止列表中，`fitpilot_postgres-data` 数据卷也仍存在（创建于 2026-10-14），源码和 Git 工作区未受影响。该操作本次没有清除 FitPilot 数据，但不是保留数据的首选排错方式；以后应先退出 Docker、备份数据并尝试上游的父目录改名方案。
+- 用户随后选择 Docker Desktop 恢复出厂设置，Docker Engine 29.8.2 一度恢复运行；三个旧 FitPilot 容器仍在停止列表中，`fitpilot_postgres-data` 数据卷也仍存在（创建于 2026-10-14），源码和 Git 工作区未受影响。该操作本次没有清除 FitPilot 数据，但不是保留数据的首选排错方式；以后应先退出 Docker、备份数据并尝试上游的父目录改名方案。
+- 当天下午 Docker 又显示 `Wsl/CallMsi/Install/ERROR_NOT_FOUND`。实际检查发现 WSL 3.0.3、Ubuntu、`docker-desktop` 注册和 WSL2 内核均正常，问题是多组早上遗留的 Docker Desktop / backend 进程与新错误对话框并存。
+- 使用 `docker desktop stop --timeout 30` 有序停止后，旧 Docker 与挂起的 `wsl.exe` 进程全部退出；随后 `docker desktop start` 恢复 Server 29.8.2。没有注销发行版、删除数据卷或再次 Reset。
+- 恢复后 `fitpilot_postgres-data` 仍存在，三个原项目容器重新启动并全部 healthy，`/v3/api-docs` 与网页返回 200。以后遇到相同截图应先检查 `wsl --version`、`wsl -l -v` 和 `docker desktop status`，优先使用 Docker CLI 有序停止 / 启动。
 
 ## 文档与数据注意事项
 
