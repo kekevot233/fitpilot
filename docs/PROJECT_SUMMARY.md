@@ -103,8 +103,8 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-15 [生产镜像 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38691020518)全部通过，并生成三类测试报告。
-- 后端测试：72 个快速单元 / MVC 测试通过；Testcontainers 套件现有 2 个 PostgreSQL 集成测试，覆盖空库迁移和最近份量去重查询。本轮本机 Docker Desktop 不可用，新增用例等待 CI 复验。
+- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-15 [最近份量复用 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38709632256)全部通过，并生成三类测试报告。
+- 后端测试：72 个快速单元 / MVC 测试通过；2 个 PostgreSQL Testcontainers 集成测试通过，覆盖空库迁移和最近份量去重查询。
 - 前端测试：2 个 Vitest 跨组件流程测试，覆盖核心饮食流程和最近份量自动填入；Playwright 有注册、错误登录和核心饮食 3 个场景，在桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共形成 9 个执行项；TypeScript 检查和 Vite 生产构建通过。
 - npm 依赖审计：0 个已知漏洞。
 - Docker Compose 三容器开发环境联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。

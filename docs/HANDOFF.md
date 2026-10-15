@@ -228,7 +228,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 集成测试关闭 Flyway 自动基线，从真正的空库执行 V1 → V2 → V3，并让 Hibernate `validate` 检查实体映射。
 - 断言内容：迁移版本必须恰好为 1、2、3；必须存在 9 张业务表；`food_logs` 五个营养快照字段必须为 `NOT NULL`；默认食物必须初始化为 85 个；最近食物查询必须对同一种食物只返回最新一条份量和餐次。
 - Failsafe 测试 JVM 固定 `api.version=1.40`，用于兼容 Docker Desktop 29 的最低 API 限制，只影响集成测试。
-- 集成套件现有 2 个 PostgreSQL 测试。2026-10-15 本轮本机 Docker Desktop 不可用，新增的最近份量查询用例将在 GitHub Actions 的 Docker 环境复验；此前迁移用例已在 CI 通过。测试数据库为 Docker 临时库，不会连接或修改本地 `fitpilot` 数据库。
+- 集成套件现有 2 个 PostgreSQL 测试。2026-10-15 [最近份量复用 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38709632256) 已在 Ubuntu Docker 环境确认空库迁移和最近份量去重查询全部通过。测试数据库为 Docker 临时库，不会连接或修改本地 `fitpilot` 数据库。
 
 ## 最近使用食物（已实现）
 
@@ -239,7 +239,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - `FoodLogRepository.findRecentlyLoggedFoods` 使用反连接查询，为每种启用食物保留最新一条记录；相同用餐时间再按记录 ID 决定最新项，并继续隔离当前用户。
 - 前端在成功写入饮食记录后刷新最近列表；没有历史数据时显示友好引导，而非展示完整食物库。
 - 普通关键词搜索仍只选择食物，不会覆盖用户已经输入的份量或餐次；只有“最近记录”选项带入历史值。
-- 验证：后端 72 个快速测试通过；前端 2 个 Vitest 流程测试和 `npm run build` 通过。真实 PostgreSQL 查询场景已加入 Testcontainers 套件，本机受 Docker Desktop 状态阻塞，等待 CI 复验。
+- 验证：后端 72 个快速测试通过；前端 2 个 Vitest 流程测试和 `npm run build` 通过；GitHub Actions 上 2 个真实 PostgreSQL Testcontainers 测试以及生产镜像的 9 个 Playwright 执行项全部通过。
 
 ## 七日饮食趋势（已实现）
 
@@ -307,6 +307,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 配置通过 actionlint 1.7.12 静态检查；2026-10-15 [首次 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38661508064)（提交 `e7d0ffc`）两个任务均成功。日志确认 72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest 测试和生产构建全部通过，两个测试报告 artifact 均已上传。
 - 2026-10-15 [跨浏览器 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38669167886)（提交 `cdfef0c`）三个任务全部通过：72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest、生产构建和 9 个 Playwright 执行项；`backend-test-reports`、`frontend-test-reports`、`playwright-report` 均已上传。
 - 2026-10-15 [生产镜像 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38691020518)（提交 `d3d1cf3`）三个任务全部通过：72 个快速测试、1 个 Testcontainers 集成测试、1 个 Vitest、前端构建，以及生产单服务镜像上的 9 个 Playwright 执行项（19.3 秒）；三类报告均已上传，临时数据库卷已清理。
+- 2026-10-15 [最近份量复用 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38709632256)（提交 `d03b3b7`）三个任务全部通过：72 个快速测试、2 个 Testcontainers 集成测试、2 个 Vitest、前端生产构建，以及生产单服务镜像上的 9 个 Playwright 执行项；新增查询在真实 PostgreSQL 17 中验证通过。
 
 ## 生产部署准备（已实现，尚未上线）
 
@@ -453,7 +454,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-最近一次本机验证：前端 `2` 个 Vitest 核心流程测试和生产构建成功；后端 `72` 个快速测试通过。本轮 Testcontainers 因 Docker Desktop 当前不可用而未能在本机启动，新增真实 PostgreSQL 查询用例等待 GitHub Actions 复验。上一轮 CI 已确认 1 个迁移集成测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项、生产镜像和 npm 0 个已知漏洞。
+最近一次已通过：前端 `2` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `2` 个 PostgreSQL Testcontainers 集成测试全部通过。完整结果见 [GitHub Actions 运行 38709632256](https://github.com/zhengyi123452/fitpilot/actions/runs/38709632256)。本机 Docker Desktop 当前不可用，所以集成测试与生产镜像验证由 GitHub Ubuntu runner 完成。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
