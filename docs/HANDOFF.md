@@ -299,8 +299,8 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 工作流只授予 `contents: read`，checkout 不保留凭据；官方 Actions 固定到完整 commit SHA。后端超时 20 分钟、前端超时 10 分钟；同一分支或 PR 的新运行会取消旧运行。
 - 未取消的运行会尝试上传 `backend-test-reports`（Surefire/Failsafe）和 `frontend-test-reports`（Vitest JUnit），成功或测试失败时均保留报告 14 天。可在 GitHub → Actions → CI → 对应运行页面查看步骤日志并下载 Artifacts。
 - CI 不运行需要完整应用服务的 Playwright E2E，也不部署应用。下一步可在 CI 增加 Compose + Playwright，并按团队流程配置分支保护的必需检查。
-- 配置已通过 actionlint 1.7.12 静态检查；首次 GitHub 云端运行需要推送该工作流后确认，不能仅凭本地通过视为云端通过。
-- 2026-10-15 本地复验：72 个快速测试、1 个 Vitest 测试、生产构建通过，`npm ci` 审计为 0 个已知漏洞。Testcontainers 首次运行因 Docker Desktop 未启动失败；启动 Docker 后出现 Secrets Engine 的 `engine.sock` 重命名错误，属于本机环境故障，尚待云端验证完整集成测试。Playwright / Compose 的联合验收仍为 2026-10-14 的记录，本轮未重跑。
+- 配置通过 actionlint 1.7.12 静态检查；2026-10-15 [首次 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38661508064)（提交 `e7d0ffc`）两个任务均成功。日志确认 72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest 测试和生产构建全部通过，两个测试报告 artifact 均已上传。
+- 2026-10-15 本地复验：72 个快速测试、1 个 Vitest 测试、生产构建通过，`npm ci` 审计为 0 个已知漏洞。Testcontainers 首次运行因 Docker Desktop 未启动失败；启动 Docker 后出现 Secrets Engine 的 `engine.sock` 重命名错误，属于本机环境故障；完整集成测试随后已在 GitHub Ubuntu runner 验证通过。Playwright / Compose 的联合验收仍为 2026-10-14 的记录，本轮未重跑。
 
 ## 本地运行
 
@@ -438,6 +438,14 @@ mvn -o -Pintegration-tests verify
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
 在某些 Windows 权限/文件锁情况下，Maven 可能报 `target\\classes\\application-no-db.yml` 拒绝访问；先确认没有另一个 Maven/IDE 构建占用文件，再重试。不要删除项目目录或数据库来解决这个问题。
+
+## 2026-10-15 本机 Docker Desktop 启动故障
+
+- 启动报错：`initializing Secrets Engine`，`engine.sock` 重命名为 `.stale` 时出现 `The file cannot be accessed by the system`。这发生在 Docker daemon 就绪之前，不是 Flyway 或业务测试失败。
+- 检查时 Docker 进程已经退出；`%LOCALAPPDATA%/docker-secrets-engine` 中仅有一个 0 字节、带 `ReparsePoint` 属性的 `engine.sock`。
+- [Docker 上游同类报告](https://github.com/docker/for-win/issues/15064)提供了保留并重命名整个 socket 父目录、让 Docker 重建的临时解决方法。本轮使用 PowerShell `Rename-Item` 尝试后仍收到 `Access denied`，因此本机尚未恢复，原目录和数据未改动。
+- 后续可在退出 Docker 后，从用户自己的管理员 PowerShell 尝试把这个目录改名备份再启动 Docker；不要直接重置出厂设置、删除数据库卷或注销 Docker 的 WSL 数据发行版。临时目录改名并非上游永久修复。
+- 本次 CI 已在 GitHub Linux runner 完整通过，因此不受该 Windows 本机故障影响。恢复本机 Docker 后可运行 `docker info`、`mvn -Pintegration-tests verify`，再按需启动 Compose。
 
 ## 文档与数据注意事项
 

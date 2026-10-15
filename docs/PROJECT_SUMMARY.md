@@ -100,7 +100,7 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- 已接入 `.github/workflows/ci.yml`，工作流通过 actionlint 静态检查；GitHub 云端执行状态以仓库 Actions 页面为准。
+- 已接入 `.github/workflows/ci.yml`，工作流通过 actionlint 静态检查；2026-10-15 [GitHub CI 首次运行](https://github.com/zhengyi123452/fitpilot/actions/runs/38661508064)的前后端任务均通过，并生成测试报告。
 - 后端测试：72 个快速单元 / MVC 测试通过；1 个 PostgreSQL Testcontainers 集成测试通过。
 - 前端测试：1 个 Vitest 跨组件流程测试、1 个 Playwright Chromium 端到端测试通过；TypeScript 检查和 Vite 生产构建通过。
 - npm 依赖审计：0 个已知漏洞。
@@ -109,7 +109,7 @@ Java 21 + Spring Boot 单体后端
 - 后端能够连接真实 PostgreSQL 启动；现有数据库 V3 基线接管，以及 Docker 临时空库从 V1 到 V3 的完整迁移均已验证。
 - Swagger UI 提供接口文档和手动测试入口。
 
-2026-10-15 已本地复验快速测试、Vitest 和生产构建；本机 Docker Desktop 启动故障使集成测试复验暂受阻，云端结果待首次 CI 运行确认。Playwright 和 Compose 联合验收记录来自 2026-10-14。
+2026-10-15 已本地复验快速测试、Vitest 和生产构建，并在 GitHub CI 复验全部上述测试和 PostgreSQL 集成测试。本机 Docker Desktop 的 socket 启动故障仍待处理，排错记录见 Handoff；Playwright 和 Compose 联合验收记录来自 2026-10-14。
 
 以上数字是当前快照；新增功能后必须重新验证并同步更新，不能把旧结果长期保留为现状。
 
