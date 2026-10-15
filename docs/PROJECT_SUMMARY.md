@@ -102,7 +102,7 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- `.github/workflows/ci.yml` 已扩展为桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-15 [GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38669167886)全部通过，并生成三类测试报告。
+- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-15 [生产镜像 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38691020518)全部通过，并生成三类测试报告。
 - 后端测试：72 个快速单元 / MVC 测试通过；1 个 PostgreSQL Testcontainers 集成测试通过。
 - 前端测试：1 个 Vitest 跨组件流程测试；Playwright 有注册、错误登录和核心饮食 3 个场景，在桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共形成 9 个执行项；TypeScript 检查和 Vite 生产构建通过。
 - npm 依赖审计：0 个已知漏洞。
@@ -112,7 +112,7 @@ Java 21 + Spring Boot 单体后端
 - 后端能够连接真实 PostgreSQL 启动；现有数据库 V3 基线接管，以及 Docker 临时空库从 V1 到 V3 的完整迁移均已验证。
 - Swagger UI 提供接口文档和手动测试入口。
 
-2026-10-15 已在隔离 Compose 环境复验桌面与手机 Chromium 共 6 项，三个容器均 healthy，空库初始化 85 个食物；GitHub Ubuntu runner 随后确认包含 Firefox 在内的 9 项全部通过。原 FitPilot 数据卷未被使用。
+2026-10-15 已在隔离生产 Compose 环境复验桌面与手机 Chromium 共 6 项，应用和 PostgreSQL 均 healthy，空库初始化 85 个食物；GitHub Ubuntu runner 随后在同一生产拓扑确认包含 Firefox 在内的 9 项全部通过。原 FitPilot 数据卷未被使用。
 
 以上数字是当前快照；新增功能后必须重新验证并同步更新，不能把旧结果长期保留为现状。
 

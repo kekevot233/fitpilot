@@ -303,6 +303,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - CI 现在覆盖完整应用服务的注册、错误登录和核心饮食 Playwright E2E，并包含桌面 Chromium、桌面 Firefox 与手机尺寸。它构建并验证可直接部署的生产镜像，但不会自动创建或更新线上资源；后续可增加 Render 部署阶段、接口故障重试、WebKit 和无障碍检查，并按团队流程把三个任务设为分支保护的必需检查。
 - 配置通过 actionlint 1.7.12 静态检查；2026-10-15 [首次 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38661508064)（提交 `e7d0ffc`）两个任务均成功。日志确认 72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest 测试和生产构建全部通过，两个测试报告 artifact 均已上传。
 - 2026-10-15 [跨浏览器 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38669167886)（提交 `cdfef0c`）三个任务全部通过：72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest、生产构建和 9 个 Playwright 执行项；`backend-test-reports`、`frontend-test-reports`、`playwright-report` 均已上传。
+- 2026-10-15 [生产镜像 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38691020518)（提交 `d3d1cf3`）三个任务全部通过：72 个快速测试、1 个 Testcontainers 集成测试、1 个 Vitest、前端构建，以及生产单服务镜像上的 9 个 Playwright 执行项（19.3 秒）；三类报告均已上传，临时数据库卷已清理。
 
 ## 生产部署准备（已实现，尚未上线）
 
@@ -449,7 +450,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-最近一次已通过：前端 `1` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `1` 个 PostgreSQL Testcontainers 集成测试全部通过；现有 PostgreSQL V3 基线接管、临时空库 V1 → V3、三容器开发 Compose 和单服务生产 Compose 均验证成功；npm 审计为 0 个已知漏洞。生产镜像本地复验桌面与手机 Chromium 6 项通过，完整 Firefox 组合等待本次提交后的 GitHub CI 确认。
+最近一次已通过：前端 `1` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `1` 个 PostgreSQL Testcontainers 集成测试全部通过；现有 PostgreSQL V3 基线接管、临时空库 V1 → V3、三容器开发 Compose 和单服务生产 Compose 均验证成功；npm 审计为 0 个已知漏洞。生产镜像本地复验桌面与手机 Chromium 6 项通过；GitHub Ubuntu runner 随后确认包含 Firefox 在内的 9 项全部通过。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
