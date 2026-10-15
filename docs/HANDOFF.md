@@ -251,7 +251,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 当前日期使用 `aria-current="date"` 和选中样式标记；每个按钮向读屏器说明日期、实际摄入和目标，也支持键盘聚焦与操作。
 - 接口从 JWT 读取用户 ID，`days` 限制为 7–30。
 - 前端组件：`web/src/components/NutritionTrendPanel.tsx`。
-- 验证：前端 3 个 Vitest 流程测试和 `npm run build` 通过；后端接口未改动。
+- 验证：前端 3 个 Vitest 流程测试和 `npm run build` 通过；[GitHub Actions 运行 38712121774](https://github.com/zhengyi123452/fitpilot/actions/runs/38712121774) 进一步确认 72 个后端快速测试、2 个 PostgreSQL 集成测试和生产镜像上的 9 个 Playwright 执行项全部通过。
 - 新增 `UserProfileServiceTest`：三种目标热量与宏量重算、历史目标保留、同日多次切换和用户不存在。
 - 新增 `NutritionPlanControllerTest`：JWT 用户隔离、未登录拒绝、缺失/null/非法目标拒绝。
 - 七日趋势的数值逻辑目前主要由后端服务 / MVC 测试覆盖；现有 Playwright 核心流程会加载该面板，但还没有逐项断言图表数值。
@@ -311,6 +311,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 2026-10-15 [跨浏览器 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38669167886)（提交 `cdfef0c`）三个任务全部通过：72 个快速测试、1 个 PostgreSQL 集成测试、1 个 Vitest、生产构建和 9 个 Playwright 执行项；`backend-test-reports`、`frontend-test-reports`、`playwright-report` 均已上传。
 - 2026-10-15 [生产镜像 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38691020518)（提交 `d3d1cf3`）三个任务全部通过：72 个快速测试、1 个 Testcontainers 集成测试、1 个 Vitest、前端构建，以及生产单服务镜像上的 9 个 Playwright 执行项（19.3 秒）；三类报告均已上传，临时数据库卷已清理。
 - 2026-10-15 [最近份量复用 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38709632256)（提交 `d03b3b7`）三个任务全部通过：72 个快速测试、2 个 Testcontainers 集成测试、2 个 Vitest、前端生产构建，以及生产单服务镜像上的 9 个 Playwright 执行项；新增查询在真实 PostgreSQL 17 中验证通过。
+- 2026-10-15 [趋势日期导航 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38712121774)（提交 `1b29fc6`）三个任务全部通过：72 个快速测试、2 个 Testcontainers 集成测试、3 个 Vitest、前端生产构建，以及生产单服务镜像上的 9 个 Playwright 执行项。
 
 ## 生产部署准备（已实现，尚未上线）
 
@@ -457,7 +458,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-最近一次已通过：前端 `2` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `2` 个 PostgreSQL Testcontainers 集成测试全部通过。完整结果见 [GitHub Actions 运行 38709632256](https://github.com/zhengyi123452/fitpilot/actions/runs/38709632256)。本机 Docker Desktop 当前不可用，所以集成测试与生产镜像验证由 GitHub Ubuntu runner 完成。
+最近一次已通过：前端 `3` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `2` 个 PostgreSQL Testcontainers 集成测试全部通过。完整结果见 [GitHub Actions 运行 38712121774](https://github.com/zhengyi123452/fitpilot/actions/runs/38712121774)。本机 Docker Desktop 当前不可用，所以集成测试与生产镜像验证由 GitHub Ubuntu runner 完成。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
