@@ -113,6 +113,7 @@ Java 21 + Spring Boot 单体后端
 - 前端测试：11 个 Vitest 测试通过，覆盖饮食与体重流程、日期导航、历史补录、体重编辑/删除/取消/失败重试和日期切换时的旧请求保护；TypeScript 检查和 Vite 生产构建通过。Playwright 保留注册、错误登录和核心饮食 3 个场景，注册场景扩展体重明细编辑、确认删除及刷新后持久化。
 - 本轮浏览器验证：本机桌面和手机 Chromium 共 6 项通过；GitHub Ubuntu CI 在实际单服务生产镜像上确认包含 Firefox 的 9 项全部通过，覆盖体重明细编辑、取消/确认删除、刷新后持久化与手机页面宽度。
 - npm 依赖审计：0 个已知漏洞。
+- 敏感信息审计（2026-10-17）：Gitleaks 8.30.1 扫描全部 17 个可达历史提交和当前 176 个项目文件；5 个疑似项核实为测试值/SQL 误报，本次未发现真实凭据泄露。范围、命中说明和配置核查见[扫描记录](SECURITY_SCAN.md)，尚未接入持续扫描 CI。
 - Docker Compose 三容器开发环境联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。
 - 单服务生产镜像联合验收通过：production profile 使用 Render 风格 `connectionString` 连接独立 PostgreSQL，健康、首页、静态资源与 OpenAPI 返回成功，未登录业务 API 返回 401；桌面和手机 Chromium 6 项通过。
 - 从全新容器数据库启动时，Flyway 自动完成 V1 → V2 → V3，初始化 85 个食物；真实链路已验证“登录 → 搜索熟米饭 → 记录 200g → Dashboard 显示 260 kcal → 切换减脂计划并重算目标”。
