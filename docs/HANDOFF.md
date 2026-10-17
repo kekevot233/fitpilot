@@ -154,6 +154,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - `App.tsx` 对当前体重查询保存用户/日期标识；切换日期或退出登录后，旧保存/删除的回调不能重新加载旧日期覆盖当前趋势。
 - 新增 Controller/Service 测试覆盖 JWT 用户隔离、未登录拒绝、日期格式、找不到记录；PostgreSQL 集成测试验证双用户同日期互不影响及删除后均值重算。网页测试覆盖倒序明细、编辑、取消、失败重试、删除为空和请求未返回时切换日期；Playwright 注册场景扩展编辑/取消/删除及刷新后的持久化验证。
 - 本地验证：85 个快速测试、3 个 PostgreSQL Testcontainers 集成测试、11 个 Vitest 测试及生产构建通过；开发 Compose 前后端已更新，桌面/手机 Chromium 共 6 项通过，含展开明细时手机页面宽度检查。
+- 远端验证：[GitHub Actions 39019935648](https://github.com/kekevot233/fitpilot/actions/runs/39019935648)（提交 `7f54779`）全部成功：85 个快速测试、3 个 PostgreSQL 集成测试、11 个 Vitest、生产构建，以及真实生产镜像上包含 Firefox 的 9 个 Playwright 执行项（25.8 秒）。测试报告已上传，临时数据库卷已清理。
 
 ## 无目标历史日期饮食补记（2026-10-17）
 
@@ -492,7 +493,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-当前本地验证（2026-10-17）：前端 `11` 个 Vitest 测试和生产构建通过；后端 `85` 个快速测试和 `3` 个 PostgreSQL Testcontainers 集成测试通过。本机开发 Compose 前后端已重建且三服务 healthy，桌面/手机 Chromium `6` 项通过。本机 Firefox 曾报启动 `spawn UNKNOWN`，本轮生产镜像及 Firefox 验证交由 GitHub Ubuntu CI；前一轮已通过的生产镜像 CI 记录见 [GitHub Actions 39000605044](https://github.com/kekevot233/fitpilot/actions/runs/39000605044)。
+当前验证（2026-10-17）：前端 `11` 个 Vitest 测试和生产构建通过；后端 `85` 个快速测试和 `3` 个 PostgreSQL Testcontainers 集成测试通过。本机开发 Compose 前后端已重建且三服务 healthy，桌面/手机 Chromium `6` 项通过。本机 Firefox 曾报启动 `spawn UNKNOWN`，GitHub Ubuntu CI 已在本次提交的生产镜像上验证包含 Firefox 的 `9` 项全部通过。完整结果见 [GitHub Actions 39019935648](https://github.com/kekevot233/fitpilot/actions/runs/39019935648)。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
