@@ -4,6 +4,8 @@ FitPilot 是一个面向健身新手和日常健身用户的饮食与训练规�
 
 目前第一阶段聚焦网页端的饮食记录 MVP：用户注册时根据身体数据生成营养目标，登录后按食物和克数记录实际摄入，并查看每日营养进度与体重趋势。主页支持调整饮食计划，在减脂、维持和轻盈增肌之间切换；新目标从今天生效，历史日期保留原目标。食物库没有目标菜品时，也可以通过可配置的大模型 API 按菜名和克数估算营养，确认后加入当天记录。
 
+支持补录历史饮食与体重。尚未建立营养目标的日期也能记录实际摄入，页面会明确显示“当天无目标”；体重卡片可单独选择日期并修改已有记录。注册与身体资料编辑只需选择活动水平，无需重复填写训练次数。
+
 ## Repository layout
 
 ```text
@@ -121,7 +123,7 @@ mvn -Pintegration-tests verify
 
 ## Continuous integration
 
-[GitHub Actions CI](https://github.com/zhengyi123452/fitpilot/actions/workflows/ci.yml) 在每次 push、pull request 和手动触发时自动运行：
+[GitHub Actions CI](https://github.com/kekevot233/fitpilot/actions/workflows/ci.yml) 在每次 push、pull request 和手动触发时自动运行：
 
 - 后端：Java 21 + Maven 快速测试、Testcontainers PostgreSQL 集成测试和打包。
 - 前端：Node.js 22 + `npm ci`、Vitest、TypeScript 检查和 Vite 生产构建。

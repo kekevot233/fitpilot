@@ -107,10 +107,10 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-15 [趋势日期导航 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38712121774)全部通过，并生成三类测试报告。
+- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-17 [历史记录补记 GitHub CI](https://github.com/kekevot233/fitpilot/actions/runs/39000605044)（提交 `932fff7`）三个任务全部通过，并生成三类测试报告。
 - 后端测试：79 个快速单元 / MVC 测试通过；2 个 PostgreSQL Testcontainers 集成测试通过，覆盖空库迁移、最近份量查询及无目标历史日期的摄入读取；2026-10-17 在本机 Docker 环境验证。
 - 前端测试：8 个 Vitest 测试通过，覆盖核心饮食流程、最近份量、日期导航、历史饮食/体重补录、精简注册/资料编辑及趋势比较；TypeScript 检查和 Vite 生产构建通过。Playwright 保留注册、错误登录和核心饮食 3 个场景，注册场景同时验证历史饮食与体重补录以及刷新后持久化。
-- 本轮浏览器验证：桌面和手机 Chromium 共 6 项通过；Firefox 的 3 项因本机浏览器启动报 `spawn UNKNOWN` 未执行，当前修改尚未验证远端 CI。
+- 本轮浏览器验证：本机桌面和手机 Chromium 共 6 项通过；GitHub Ubuntu CI 在实际单服务生产镜像上确认包含 Firefox 的 9 项全部通过，覆盖历史饮食/体重补录、刷新后持久化和手机页面宽度。
 - npm 依赖审计：0 个已知漏洞。
 - Docker Compose 三容器开发环境联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。
 - 单服务生产镜像联合验收通过：production profile 使用 Render 风格 `connectionString` 连接独立 PostgreSQL，健康、首页、静态资源与 OpenAPI 返回成功，未登录业务 API 返回 401；桌面和手机 Chromium 6 项通过。

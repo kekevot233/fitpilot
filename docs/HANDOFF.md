@@ -155,6 +155,8 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 七日趋势继续将缺失目标的 `targetCalories=0` 视为无目标，不画目标线，日期说明显示“当天无目标”。平均摄入涵盖所有有记录日期；平均目标和平均相差仅比较同时有记录和目标的日期，避免两个不同样本平均数相减。
 - 回归覆盖空白/已有摄入的无目标日期、用户不存在、目标历史、真实 PostgreSQL 中不生成目标、前端历史食物时间戳与返回今天后的日期隔离，以及真实浏览器刷新后记录仍可读取。
 - 本地验证：79 个快速单元/MVC 测试、2 个 PostgreSQL 集成测试、8 个 Vitest 测试及生产构建通过；开发 Compose 前后端已更新并健康运行，保留原数据库数据卷。
+- 远端验证：[GitHub Actions 39000605044](https://github.com/kekevot233/fitpilot/actions/runs/39000605044)（提交 `932fff7`）三个任务全部成功：79 个快速测试、2 个 PostgreSQL 集成测试、8 个 Vitest、生产构建，以及真实生产镜像上的 9 个 Playwright 执行项（含 Firefox，23.9 秒）。三类报告已上传，CI 临时数据库卷已清理。
+- GitHub 仓库已迁移至 `https://github.com/kekevot233/fitpilot`；本地 `origin` 已同步更新，旧地址的历史链接仍由 GitHub 重定向。
 
 ## 简化营养资料与历史体重补录（2026-10-15）
 
@@ -481,7 +483,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-当前本地验证（2026-10-17）：前端 `8` 个 Vitest 测试和生产构建通过；后端 `79` 个快速测试和 `2` 个 PostgreSQL Testcontainers 集成测试通过。Docker Desktop 已可用，开发 Compose 前后端已重建且三服务 healthy。Playwright 桌面/手机 Chromium `6` 项通过，包含无目标日期的历史饮食和体重补录；本机 Firefox 曾报启动 `spawn UNKNOWN`，本轮将 Firefox 验证交给 Ubuntu CI。先前版本的完整跨浏览器 CI 记录见 [GitHub Actions 运行 38712121774](https://github.com/zhengyi123452/fitpilot/actions/runs/38712121774)，不代表本轮修改已通过远端 CI。
+当前验证（2026-10-17）：前端 `8` 个 Vitest 测试和生产构建通过；后端 `79` 个快速测试和 `2` 个 PostgreSQL Testcontainers 集成测试通过。本机开发 Compose 前后端已重建且三服务 healthy，桌面/手机 Chromium `6` 项通过；本机 Firefox 曾报启动 `spawn UNKNOWN`，GitHub Ubuntu CI 已在同一提交的生产镜像上确认含 Firefox 的 `9` 项全部通过。完整结果见 [GitHub Actions 39000605044](https://github.com/kekevot233/fitpilot/actions/runs/39000605044)。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
