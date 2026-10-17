@@ -57,9 +57,9 @@ export type CopyFoodLogsResponse = {
 export type DailyDashboard = {
   userId: number
   date: string
-  target: NutritionValues
+  target: NutritionValues | null
   consumed: NutritionValues
-  remaining: NutritionValues
+  remaining: NutritionValues | null
   foodLogs: FoodLog[]
 }
 

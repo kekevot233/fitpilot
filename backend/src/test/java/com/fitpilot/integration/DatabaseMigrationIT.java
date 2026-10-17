@@ -3,6 +3,7 @@ package com.fitpilot.integration;
 import com.fitpilot.domain.MealType;
 import com.fitpilot.dto.food.RecentFoodResponse;
 import com.fitpilot.service.FoodService;
+import com.fitpilot.service.FoodLogService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,6 +15,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,6 +37,8 @@ class DatabaseMigrationIT {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private FoodService foodService;
+    @Autowired
+    private FoodLogService foodLogService;
 
     @Test
     void buildsAValidatedApplicationSchemaFromAnEmptyDatabase() {
@@ -104,6 +108,14 @@ class DatabaseMigrationIT {
                 .containsExactly("集成测试米饭", "集成测试豆浆");
         assertThat(recent.getFirst().lastGrams()).isEqualByComparingTo("280");
         assertThat(recent.getFirst().lastMealType()).isEqualTo(MealType.DINNER);
+
+        var dashboard = foodLogService.getDailyDashboard(userId, LocalDate.of(2026, 10, 15));
+        assertThat(dashboard.target()).isNull();
+        assertThat(dashboard.remaining()).isNull();
+        assertThat(dashboard.consumed().calories()).isEqualByComparingTo("364.0");
+        assertThat(dashboard.foodLogs()).hasSize(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM nutrition_targets WHERE user_id = ?", Integer.class, userId)).isZero();
     }
 
     private Long insertFood(String name, String calories, String protein, String carbs, String fat) {

@@ -32,6 +32,6 @@ public record RegisterRequest(
         @NotNull @DecimalMin("30.0") @DecimalMax("350.0") Double weightKg,
         @NotNull ActivityLevel activityLevel,
         @NotNull Goal goal,
-        @NotNull @Min(1) @Max(7) Integer weeklyTrainingFrequency
+        @Min(1) @Max(7) Integer weeklyTrainingFrequency
 ) {
 }

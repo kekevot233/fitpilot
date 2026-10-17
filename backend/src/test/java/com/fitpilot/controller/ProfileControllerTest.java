@@ -64,6 +64,22 @@ class ProfileControllerTest {
     }
 
     @Test
+    void acceptsProfileWithoutTrainingFrequency() throws Exception {
+        authenticate();
+
+        mvc.perform(put("/api/me/profile")
+                        .header("Authorization", "Bearer test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"age":23,"heightCm":180,"weightKg":80,"activityLevel":"LIGHT"}
+                                """))
+                .andExpect(status().isOk());
+
+        verify(profiles).updateProfile(7L,
+                new UpdateUserProfileRequest(23, 180.0, 80.0, ActivityLevel.LIGHT, null));
+    }
+
+    @Test
     void rejectsUnauthenticatedRequest() throws Exception {
         mvc.perform(put("/api/me/profile")
                         .contentType(MediaType.APPLICATION_JSON)

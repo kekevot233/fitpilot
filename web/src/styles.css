@@ -1080,19 +1080,19 @@ main {
   border-right: 1px solid #edf1ee;
 }
 
-.weight-form > div {
+.weight-date-field {
   display: grid;
   gap: 3px;
 }
 
-.weight-form > div span {
+.weight-date-field > span {
   color: #7f8e88;
   font-size: 10px;
 }
 
-.weight-form > div strong {
-  color: #315448;
-  font-size: 12px;
+.weight-date-field input {
+  min-width: 0;
+  width: 100%;
 }
 
 .weight-form input {

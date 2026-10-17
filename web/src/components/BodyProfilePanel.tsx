@@ -21,7 +21,6 @@ export function BodyProfilePanel({ user, onSaved }: Props) {
   const [heightCm, setHeightCm] = useState(String(user.heightCm))
   const [weightKg, setWeightKg] = useState(String(user.weightKg))
   const [activityLevel, setActivityLevel] = useState(user.activityLevel)
-  const [weeklyTrainingFrequency, setWeeklyTrainingFrequency] = useState(String(user.weeklyTrainingFrequency))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -33,7 +32,6 @@ export function BodyProfilePanel({ user, onSaved }: Props) {
     setHeightCm(String(user.heightCm))
     setWeightKg(String(user.weightKg))
     setActivityLevel(user.activityLevel)
-    setWeeklyTrainingFrequency(String(user.weeklyTrainingFrequency))
     setError('')
   }
 
@@ -55,7 +53,6 @@ export function BodyProfilePanel({ user, onSaved }: Props) {
         heightCm: Number(heightCm),
         weightKg: Number(weightKg),
         activityLevel,
-        weeklyTrainingFrequency: Number(weeklyTrainingFrequency),
       })
       onSaved(updatedUser)
       setExpanded(false)
@@ -78,7 +75,6 @@ export function BodyProfilePanel({ user, onSaved }: Props) {
             <span><strong>{user.heightCm}</strong> cm</span>
             <span><strong>{user.weightKg}</strong> kg</span>
             <span><strong>{currentActivity.label}</strong></span>
-            <span>每周训练 <strong>{user.weeklyTrainingFrequency}</strong> 天</span>
           </div>
         </div>
         <button
@@ -121,13 +117,6 @@ export function BodyProfilePanel({ user, onSaved }: Props) {
                   <option value={option.value} key={option.value}>{option.label} · {option.detail}</option>
                 ))}
               </select>
-            </label>
-            <label>
-              <span>每周训练频率</span>
-              <div className="input-with-unit">
-                <input type="number" min="1" max="7" required value={weeklyTrainingFrequency} onChange={(event) => setWeeklyTrainingFrequency(event.target.value)} />
-                <span>天</span>
-              </div>
             </label>
           </div>
           <p className="nutrition-plan-description">

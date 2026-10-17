@@ -16,6 +16,8 @@ import com.fitpilot.repository.FoodRepository;
 import com.fitpilot.repository.NutritionTargetRepository;
 import com.fitpilot.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -57,8 +59,9 @@ class FoodLogServiceTest {
     @InjectMocks
     private FoodLogService service;
 
-    @Test
-    void summarizesDailyIntakeAndRemainingTargets() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void summarizesDailyIntakeWithOrWithoutATarget(boolean hasTarget) {
         long userId = 1L;
         LocalDate date = LocalDate.of(2026, 9, 13);
         User user = new User(
@@ -82,7 +85,7 @@ class FoodLogServiceTest {
         when(userRepository.existsById(userId)).thenReturn(true);
         when(nutritionTargetRepository
                 .findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(userId, date))
-                .thenReturn(Optional.of(target));
+                .thenReturn(hasTarget ? Optional.of(target) : Optional.empty());
         when(foodLogRepository
                 .findByUserIdAndEatenAtGreaterThanEqualAndEatenAtLessThanOrderByEatenAtAsc(
                         userId, date.atStartOfDay(), date.plusDays(1).atStartOfDay()
@@ -95,7 +98,34 @@ class FoodLogServiceTest {
         assertThat(response.consumed().protein()).isEqualByComparingTo("9.1");
         assertThat(response.consumed().carbs()).isEqualByComparingTo("90.7");
         assertThat(response.consumed().fat()).isEqualByComparingTo("1.1");
-        assertThat(response.remaining().calories()).isEqualByComparingTo("2632.0");
+        assertThat(response.foodLogs()).hasSize(1);
+        if (hasTarget) {
+            assertThat(response.remaining().calories()).isEqualByComparingTo("2632.0");
+        } else {
+            assertThat(response.target()).isNull();
+            assertThat(response.remaining()).isNull();
+        }
+        verify(nutritionTargetRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void returnsAnEmptyHistoricalDashboardWithoutCreatingATarget() {
+        LocalDate date = LocalDate.of(2026, 10, 14);
+        when(userRepository.existsById(1L)).thenReturn(true);
+
+        var response = service.getDailyDashboard(1L, date);
+
+        assertThat(response.target()).isNull();
+        assertThat(response.remaining()).isNull();
+        assertThat(response.consumed().calories()).isZero();
+        assertThat(response.foodLogs()).isEmpty();
+        verify(nutritionTargetRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void stillRejectsADashboardForAMissingUser() {
+        assertThatThrownBy(() -> service.getDailyDashboard(99L, LocalDate.of(2026, 10, 14)))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

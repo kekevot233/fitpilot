@@ -16,7 +16,6 @@ type RegisterForm = {
   weightKg: string
   activityLevel: ActivityLevel
   goal: Goal
-  weeklyTrainingFrequency: string
 }
 
 const initialRegisterForm: RegisterForm = {
@@ -29,7 +28,6 @@ const initialRegisterForm: RegisterForm = {
   weightKg: '70',
   activityLevel: 'MODERATE',
   goal: 'MAINTAIN',
-  weeklyTrainingFrequency: '3',
 }
 
 export function AuthScreen({ onAuthenticated }: Props) {
@@ -60,7 +58,6 @@ export function AuthScreen({ onAuthenticated }: Props) {
             weightKg: Number(registerForm.weightKg),
             activityLevel: registerForm.activityLevel,
             goal: registerForm.goal,
-            weeklyTrainingFrequency: Number(registerForm.weeklyTrainingFrequency),
           })
       saveAccessToken(auth.accessToken)
       onAuthenticated(auth)
@@ -173,20 +170,14 @@ export function AuthScreen({ onAuthenticated }: Props) {
                   <option value="EXTRA_ACTIVE">极高活动或体力工作</option>
                 </select>
               </label>
-              <div className="auth-grid two-columns">
-                <label>
-                  <span>目标</span>
-                  <select value={registerForm.goal} onChange={(e) => updateRegister('goal', e.target.value as Goal)}>
-                    <option value="FAT_LOSS">减脂</option>
-                    <option value="MAINTAIN">维持</option>
-                    <option value="LEAN_BULK">轻盈增肌</option>
-                  </select>
-                </label>
-                <label>
-                  <span>每周训练次数</span>
-                  <input type="number" min="1" max="7" required value={registerForm.weeklyTrainingFrequency} onChange={(e) => updateRegister('weeklyTrainingFrequency', e.target.value)} />
-                </label>
-              </div>
+              <label>
+                <span>目标</span>
+                <select value={registerForm.goal} onChange={(e) => updateRegister('goal', e.target.value as Goal)}>
+                  <option value="FAT_LOSS">减脂</option>
+                  <option value="MAINTAIN">维持</option>
+                  <option value="LEAN_BULK">轻盈增肌</option>
+                </select>
+              </label>
             </>
           )}
 

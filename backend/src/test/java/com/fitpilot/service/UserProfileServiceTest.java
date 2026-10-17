@@ -3,6 +3,7 @@ package com.fitpilot.service;
 import com.fitpilot.domain.*;
 import com.fitpilot.exception.ResourceNotFoundException;
 import com.fitpilot.dto.user.UpdateUserProfileRequest;
+import com.fitpilot.dto.auth.RegisterRequest;
 import com.fitpilot.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -106,6 +107,36 @@ class UserProfileServiceTest {
         assertThat(response.nutritionTarget().carbs()).isEqualTo(364);
         assertThat(response.nutritionTarget().effectiveDate()).isEqualTo(LocalDate.now());
         verify(targets).save(any(NutritionTarget.class));
+    }
+
+    @Test
+    void createsNutritionProfileWithoutRequiringTrainingFrequency() {
+        when(users.save(any(User.class))).thenAnswer(call -> {
+            User saved = call.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 2L);
+            return saved;
+        });
+        var request = new RegisterRequest("test@example.com", "password123", "Test", Gender.MALE,
+                22, 183.0, 76.0, ActivityLevel.VERY_ACTIVE, Goal.MAINTAIN, null);
+
+        var response = service.createRegisteredProfile(request, "password-hash");
+
+        assertThat(response.activityLevel()).isEqualTo(ActivityLevel.VERY_ACTIVE);
+        assertThat(response.weeklyTrainingFrequency()).isEqualTo(3);
+        assertThat(response.nutritionTarget().tdee()).isEqualTo(3103);
+        verify(users).save(any(User.class));
+    }
+
+    @Test
+    void preservesExistingTrainingFrequencyWhenNutritionProfileOmitsIt() {
+        var request = new UpdateUserProfileRequest(23, 180.0, 80.0, ActivityLevel.VERY_ACTIVE, null);
+
+        var response = service.updateProfile(1L, request);
+
+        assertThat(user.getWeeklyTrainingFrequency()).isEqualTo(4);
+        assertThat(response.weeklyTrainingFrequency()).isEqualTo(4);
+        assertThat(response.activityLevel()).isEqualTo(ActivityLevel.VERY_ACTIVE);
+        assertThat(response.nutritionTarget().tdee()).isEqualTo(3131);
     }
 
     @Test

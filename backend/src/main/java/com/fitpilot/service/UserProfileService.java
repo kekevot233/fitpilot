@@ -22,6 +22,9 @@ import java.time.LocalDate;
 @Profile("!no-db")
 public class UserProfileService {
 
+    // Retained for the legacy training API; nutrition calculations use activityLevel only.
+    private static final int DEFAULT_TRAINING_FREQUENCY = 3;
+
     private final UserRepository userRepository;
     private final NutritionTargetRepository nutritionTargetRepository;
     private final NutritionCalculationService nutritionCalculationService;
@@ -39,7 +42,8 @@ public class UserProfileService {
         User user = userRepository.save(new User(
                 request.email().trim().toLowerCase(), passwordHash,
                 request.nickname().trim(), request.gender(), request.age(), request.heightCm(), request.weightKg(),
-                request.activityLevel(), request.goal(), request.weeklyTrainingFrequency()
+                request.activityLevel(), request.goal(),
+                request.weeklyTrainingFrequency() == null ? DEFAULT_TRAINING_FREQUENCY : request.weeklyTrainingFrequency()
         ));
 
         NutritionCalculationResponse calculation = nutritionCalculationService.calculate(
@@ -76,7 +80,8 @@ public class UserProfileService {
 
         user.updateBodyProfile(
                 request.age(), request.heightCm(), request.weightKg(),
-                request.activityLevel(), request.weeklyTrainingFrequency()
+                request.activityLevel(),
+                request.weeklyTrainingFrequency() == null ? user.getWeeklyTrainingFrequency() : request.weeklyTrainingFrequency()
         );
 
         // The user is managed by JPA, so the profile fields are persisted by dirty checking at commit.

@@ -12,7 +12,8 @@ import com.fitpilot.dto.food.NutritionTrendResponse;
 import com.fitpilot.repository.FoodLogRepository;
 import com.fitpilot.repository.NutritionTargetRepository;
 import com.fitpilot.repository.UserRepository;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -41,8 +42,9 @@ class NutritionTrendServiceTest {
     @InjectMocks
     private NutritionTrendService service;
 
-    @Test
-    void aggregatesLoggedDaysAndUsesTheTargetEffectiveOnEachDate() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void aggregatesLoggedDaysAndUsesTheTargetEffectiveOnEachDate(boolean hasEarlierTarget) {
         long userId = 7L;
         LocalDate endDate = LocalDate.of(2026, 10, 11);
         User user = new User(
@@ -72,16 +74,16 @@ class NutritionTrendServiceTest {
         )).thenReturn(List.of(first, second));
         when(nutritionTargetRepository
                 .findByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateAscIdAsc(userId, endDate))
-                .thenReturn(List.of(bulk, fatLoss));
+                .thenReturn(hasEarlierTarget ? List.of(bulk, fatLoss) : List.of(fatLoss));
 
         NutritionTrendResponse response = service.getTrend(userId, endDate, 7);
 
         assertThat(response.points()).hasSize(7);
         assertThat(response.daysLogged()).isEqualTo(2);
         assertThat(response.averageCalories()).isEqualByComparingTo("195.0");
-        assertThat(response.averageTargetCalories()).isEqualByComparingTo("2700.0");
+        assertThat(response.averageTargetCalories()).isEqualByComparingTo(hasEarlierTarget ? "2700.0" : "2400.0");
         assertThat(response.points().get(4).date()).isEqualTo(LocalDate.of(2026, 10, 9));
-        assertThat(response.points().get(4).targetCalories()).isEqualTo(3000);
+        assertThat(response.points().get(4).targetCalories()).isEqualTo(hasEarlierTarget ? 3000 : 0);
         assertThat(response.points().get(5).targetCalories()).isEqualTo(2400);
         assertThat(response.points().get(6).calories()).isEqualByComparingTo("260.0");
     }

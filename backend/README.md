@@ -122,13 +122,14 @@ $body = @{
   weightKg = 76
   activityLevel = "MODERATE"
   goal = "LEAN_BULK"
-  weeklyTrainingFrequency = 4
 } | ConvertTo-Json
 
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/auth/register -ContentType "application/json" -Body $body
 ```
 
 This hashes the password with BCrypt, creates one row in `users`, calculates the nutrition target, then creates its linked row in `nutrition_targets`. Both database writes run in one transaction. The response contains a signed JWT access token and the new user profile.
+
+`weeklyTrainingFrequency` is optional (1–7 when supplied) for compatibility with the legacy training API. Registration defaults it to 3 when omitted. Nutrition calculations use `activityLevel` and do not use training frequency.
 
 Log in later with:
 
@@ -162,7 +163,6 @@ $body = @{
   heightCm = 183
   weightKg = 75.5
   activityLevel = "MODERATE"
-  weeklyTrainingFrequency = 4
 } | ConvertTo-Json
 
 Invoke-RestMethod -Method Put `
@@ -173,6 +173,8 @@ Invoke-RestMethod -Method Put `
 ```
 
 The profile update and the newly calculated nutrition target run in one transaction. The new target is effective today while older targets remain available for historical dashboards. Daily weight logs are intentionally independent and do not automatically change the planning weight or calorie target.
+
+Omitting `weeklyTrainingFrequency` preserves its saved value; the nutrition profile form no longer asks for this field.
 
 ## Food and daily nutrition
 
@@ -274,6 +276,8 @@ Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/1/dashboard?
 
 Omit `date` to use today's date.
 
+Historical intake is available even when the selected date predates the user's first nutrition target. The dashboard returns HTTP `200` with `target: null` and `remaining: null`, while `consumed` and `foodLogs` remain available. No historical target is created or inferred from the current plan. A missing user still returns HTTP `404`.
+
 Read the recent nutrition trend ending on a selected date:
 
 ```powershell
@@ -284,6 +288,8 @@ Invoke-RestMethod -Method Get `
 ```
 
 The response includes every calendar date in the range, the calorie target effective on that date, consumed calories and macros, and the number of food logs. Average intake excludes dates with no logs so an unrecorded day is not incorrectly treated as a zero-calorie day. `days` accepts 7–30.
+
+In the trend response, `targetCalories: 0` means that date has no target. `averageTargetCalories` includes only logged dates with a target. The web average difference is calculated from those same dates' intake and targets; it does not subtract averages from different sets of dates.
 
 ## Weight tracking and trends
 

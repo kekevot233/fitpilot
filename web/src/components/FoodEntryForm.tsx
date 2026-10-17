@@ -216,7 +216,7 @@ export function FoodEntryForm({ userId, date, onSaved }: Props) {
           grams: aiEstimate.grams,
           nutrition: aiEstimate.totalNutrition,
         })
-        setError(`食物已创建，但饮食记录保存失败：${(requestError as Error).message}。请再次点击“加入今日饮食”。`)
+        setError(`食物已创建，但饮食记录保存失败：${(requestError as Error).message}。请再次点击加入饮食。`)
       } else {
         setError((requestError as Error).message)
       }
@@ -487,7 +487,7 @@ export function FoodEntryForm({ userId, date, onSaved }: Props) {
             <span>脂肪 <strong>{preview.nutrition.fat.toFixed(1)}g</strong></span>
           </div>
           <button className="primary-button" disabled={working} onClick={handleSave}>
-            {working ? '保存中…' : '加入今日饮食'}
+            {working ? '保存中…' : date === new Date().toLocaleDateString('sv-SE') ? '加入今日饮食' : '加入当日饮食'}
           </button>
         </div>
       )}

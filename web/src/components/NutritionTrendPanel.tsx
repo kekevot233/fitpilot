@@ -25,7 +25,10 @@ export function NutritionTrendPanel({ trend, selectedDate, onSelectDate }: Props
     1,
     ...trend.points.flatMap((point) => [point.calories, point.targetCalories]),
   ), [trend.points])
-  const difference = trend.averageCalories - trend.averageTargetCalories
+  const comparableDays = trend.points.filter((point) => point.logCount > 0 && point.targetCalories > 0)
+  const difference = comparableDays.length > 0
+    ? comparableDays.reduce((total, point) => total + point.calories - point.targetCalories, 0) / comparableDays.length
+    : null
 
   return (
     <section className="panel nutrition-trend-panel" id="nutrition-trend" aria-label="七日饮食趋势">
@@ -34,6 +37,7 @@ export function NutritionTrendPanel({ trend, selectedDate, onSelectDate }: Props
           <p className="eyebrow">7-DAY NUTRITION</p>
           <h2>七日热量趋势</h2>
           <p>平均值只统计有饮食记录的日期，空白日期不会被当成零摄入。</p>
+          <p>平均目标与相差仅比较同时有饮食记录和目标的日期。</p>
         </div>
         <span className="trend-period">{shortDate(trend.startDate)} – {shortDate(trend.endDate)}</span>
       </div>
@@ -50,8 +54,8 @@ export function NutritionTrendPanel({ trend, selectedDate, onSelectDate }: Props
           </div>
           <div>
             <span>平均相差</span>
-            <strong className={difference > 0 ? 'trend-over' : ''}>
-              {trend.daysLogged > 0 && trend.averageTargetCalories > 0
+            <strong className={difference !== null && difference > 0 ? 'trend-over' : ''}>
+              {difference !== null
                 ? `${difference > 0 ? '+' : ''}${difference.toFixed(0)}`
                 : '—'} <small>kcal</small>
             </strong>
@@ -66,9 +70,10 @@ export function NutritionTrendPanel({ trend, selectedDate, onSelectDate }: Props
           {trend.points.map((point) => {
             const consumedHeight = (point.calories / chartMaximum) * 100
             const targetPosition = (point.targetCalories / chartMaximum) * 100
+            const targetSummary = point.targetCalories > 0 ? `目标 ${point.targetCalories} 千卡` : '当天无目标'
             const summary = point.logCount > 0
-              ? `摄入 ${point.calories.toFixed(0)} 千卡，目标 ${point.targetCalories} 千卡`
-              : `未记录，目标 ${point.targetCalories} 千卡`
+              ? `摄入 ${point.calories.toFixed(0)} 千卡，${targetSummary}`
+              : `未记录，${targetSummary}`
             return (
               <button
                 className={`nutrition-bar-day${point.logCount === 0 ? ' empty' : ''}${point.date === selectedDate ? ' selected' : ''}`}

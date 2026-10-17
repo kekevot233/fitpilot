@@ -130,9 +130,7 @@ public class FoodLogService {
 
         NutritionTarget target = nutritionTargetRepository
                 .findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(userId, date)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "No nutrition target exists for user with id " + userId + " on " + date + "."
-                ));
+                .orElse(null);
 
         List<FoodLogResponse> logs = foodLogRepository
                 .findByUserIdAndEatenAtGreaterThanEqualAndEatenAtLessThanOrderByEatenAtAsc(
@@ -142,13 +140,18 @@ public class FoodLogService {
                 .map(this::toResponse)
                 .toList();
 
+        NutritionValuesResponse consumed = sumNutrition(logs);
+        // Intake is a fact even before the user's first dated nutrition plan.
+        if (target == null) {
+            return new DailyDashboardResponse(userId, date, null, consumed, null, logs);
+        }
+
         NutritionValuesResponse targetValues = values(
                 BigDecimal.valueOf(target.getCalories()),
                 BigDecimal.valueOf(target.getProteinG()),
                 BigDecimal.valueOf(target.getCarbsG()),
                 BigDecimal.valueOf(target.getFatG())
         );
-        NutritionValuesResponse consumed = sumNutrition(logs);
         NutritionValuesResponse remaining = values(
                 targetValues.calories().subtract(consumed.calories()),
                 targetValues.protein().subtract(consumed.protein()),

@@ -42,9 +42,13 @@ export default function App() {
   const [weightTrend, setWeightTrend] = useState<WeightTrend | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [nutritionTrendError, setNutritionTrendError] = useState('')
+  const [weightError, setWeightError] = useState('')
   const today = localDateString()
   const [selectedDate, setSelectedDate] = useState(today)
+  const [weightDate, setWeightDate] = useState(today)
   const dataVersion = useRef(0)
+  const weightVersion = useRef(0)
 
   const refreshDashboard = useCallback(async () => {
     if (!user) return
@@ -54,7 +58,9 @@ export default function App() {
       const result = await getDashboard(user.id, selectedDate)
       if (version === dataVersion.current) setDashboard(result)
     } catch (requestError) {
-      if (version === dataVersion.current) setError((requestError as Error).message)
+      if (version === dataVersion.current) {
+        setError((requestError as Error).message)
+      }
     } finally {
       if (version === dataVersion.current) setLoading(false)
     }
@@ -62,23 +68,25 @@ export default function App() {
 
   const refreshWeightTrend = useCallback(async () => {
     if (!user) return
-    const version = dataVersion.current
+    const version = weightVersion.current
+    setWeightError('')
     try {
-      const result = await getWeightTrend(selectedDate)
-      if (version === dataVersion.current) setWeightTrend(result)
+      const result = await getWeightTrend(weightDate)
+      if (version === weightVersion.current) setWeightTrend(result)
     } catch (requestError) {
-      if (version === dataVersion.current) setError((requestError as Error).message)
+      if (version === weightVersion.current) setWeightError((requestError as Error).message)
     }
-  }, [selectedDate, user])
+  }, [weightDate, user])
 
   const refreshNutritionTrend = useCallback(async () => {
     if (!user) return
     const version = dataVersion.current
+    setNutritionTrendError('')
     try {
       const result = await getNutritionTrend(selectedDate)
       if (version === dataVersion.current) setNutritionTrend(result)
     } catch (requestError) {
-      if (version === dataVersion.current) setError((requestError as Error).message)
+      if (version === dataVersion.current) setNutritionTrendError((requestError as Error).message)
     }
   }, [selectedDate, user])
 
@@ -98,12 +106,23 @@ export default function App() {
     setLoading(true)
     setDashboard(null)
     setNutritionTrend(null)
-    setWeightTrend(null)
     void refreshDashboard()
     void refreshNutritionTrend()
-    void refreshWeightTrend()
     return () => { dataVersion.current += 1 }
-  }, [refreshDashboard, refreshNutritionTrend, refreshWeightTrend, user])
+  }, [refreshDashboard, refreshNutritionTrend, user])
+
+  useEffect(() => {
+    if (!user) return
+    setWeightTrend(null)
+    void refreshWeightTrend()
+    return () => { weightVersion.current += 1 }
+  }, [refreshWeightTrend, user])
+
+  function handleDateChanged(date: string) {
+    if (!date || date > today) return
+    setSelectedDate(date)
+    setWeightDate(date)
+  }
 
   function handleAuthenticated(auth: AuthResponse) {
     setUser(auth.user)
@@ -112,12 +131,15 @@ export default function App() {
 
   function handleLogout() {
     dataVersion.current += 1
+    weightVersion.current += 1
     clearAccessToken()
     setUser(null)
     setDashboard(null)
     setNutritionTrend(null)
     setWeightTrend(null)
     setError('')
+    setNutritionTrendError('')
+    setWeightError('')
   }
 
   function handleProfileChanged(updatedUser: UserProfile) {
@@ -125,6 +147,7 @@ export default function App() {
     setDashboard(null)
     setLoading(true)
     setSelectedDate(localDateString())
+    setWeightDate(localDateString())
     setUser(updatedUser)
   }
 
@@ -172,7 +195,7 @@ export default function App() {
               type="date"
               value={selectedDate}
               max={today}
-              onChange={(event) => setSelectedDate(event.target.value)}
+              onChange={(event) => handleDateChanged(event.target.value)}
               aria-label="选择饮食记录日期"
             />
           </div>
@@ -182,7 +205,7 @@ export default function App() {
 
         {error && (
           <div className="status-card error-state">
-            <strong>暂时无法连接后端</strong>
+            <strong>饮食进度暂不可用</strong>
             <span>{error}</span>
             <button onClick={refreshDashboard}>重新加载</button>
           </div>
@@ -190,6 +213,11 @@ export default function App() {
 
         {dashboard && (
           <div id="nutrition">
+            {!dashboard.target && (
+              <p className="status-card">
+                该日期尚未建立营养目标，可补记饮食和体重；摄入记录不会套用当前计划。
+              </p>
+            )}
             <NutritionProgress dashboard={dashboard} />
           </div>
         )}
@@ -205,40 +233,55 @@ export default function App() {
           onSaved={handleProfileChanged}
         />
         <CustomFoodManager />
+        {nutritionTrendError && (
+          <div className="status-card error-state" role="alert">
+            <strong>七日饮食趋势暂不可用</strong>
+            <span>{nutritionTrendError}</span>
+            <button onClick={refreshNutritionTrend}>重新加载饮食趋势</button>
+          </div>
+        )}
         {nutritionTrend && (
           <NutritionTrendPanel
             trend={nutritionTrend}
             selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
+            onSelectDate={handleDateChanged}
+          />
+        )}
+        {weightError && (
+          <div className="status-card error-state" role="alert">
+            <strong>体重趋势暂不可用</strong>
+            <span>{weightError}</span>
+            <button onClick={refreshWeightTrend}>重新加载体重趋势</button>
+          </div>
+        )}
+        {weightTrend && (
+          <WeightTrendPanel
+            key={`${user.id}-${weightDate}`}
+            selectedDate={weightDate}
+            today={today}
+            onSelectDate={setWeightDate}
+            trend={weightTrend}
+            onSaved={refreshWeightTrend}
           />
         )}
         {dashboard && (
-          <>
-            {weightTrend && (
-              <WeightTrendPanel
-                selectedDate={selectedDate}
-                trend={weightTrend}
-                onSaved={refreshWeightTrend}
-              />
-            )}
-            <div className="content-grid">
-              <FoodEntryForm
-                userId={user.id}
-                date={selectedDate}
-                onSaved={async () => {
-                  await Promise.all([refreshDashboard(), refreshNutritionTrend()])
-                }}
-              />
-              <FoodLogList
-                userId={user.id}
-                date={selectedDate}
-                logs={dashboard.foodLogs}
-                onChanged={async () => {
-                  await Promise.all([refreshDashboard(), refreshNutritionTrend()])
-                }}
-              />
-            </div>
-          </>
+          <div className="content-grid">
+            <FoodEntryForm
+              userId={user.id}
+              date={selectedDate}
+              onSaved={async () => {
+                await Promise.all([refreshDashboard(), refreshNutritionTrend()])
+              }}
+            />
+            <FoodLogList
+              userId={user.id}
+              date={selectedDate}
+              logs={dashboard.foodLogs}
+              onChanged={async () => {
+                await Promise.all([refreshDashboard(), refreshNutritionTrend()])
+              }}
+            />
+          </div>
         )}
       </main>
 

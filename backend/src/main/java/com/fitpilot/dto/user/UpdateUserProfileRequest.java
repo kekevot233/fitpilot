@@ -24,7 +24,7 @@ public record UpdateUserProfileRequest(
         @NotNull
         ActivityLevel activityLevel,
 
-        @NotNull @Min(1) @Max(7)
+        @Min(1) @Max(7)
         @Schema(example = "4")
         Integer weeklyTrainingFrequency
 ) {

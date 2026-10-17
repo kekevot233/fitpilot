@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { NutritionTrendPanel } from './components/NutritionTrendPanel'
 import type {
   DailyDashboard,
   Food,
@@ -32,6 +33,8 @@ let today: string
 let currentUser: UserProfile
 let foodLogs: FoodLog[]
 let requests: RecordedRequest[]
+let missingHistoricalTarget: boolean
+let weightLogs: Map<string, number>
 
 function nutritionTarget(goal: UserProfile['goal']) {
   if (goal === 'FAT_LOSS') {
@@ -73,8 +76,8 @@ function newUser(goal: UserProfile['goal'] = 'MAINTAIN'): UserProfile {
   }
 }
 
-function consumedNutrition(): NutritionValues {
-  return foodLogs.reduce((total, log) => ({
+function consumedNutrition(date: string): NutritionValues {
+  return foodLogs.filter((log) => log.eatenAt.startsWith(`${date}T`)).reduce((total, log) => ({
     calories: total.calories + log.nutrition.calories,
     protein: total.protein + log.nutrition.protein,
     carbs: total.carbs + log.nutrition.carbs,
@@ -89,7 +92,7 @@ function offsetDate(value: string, days: number) {
 }
 
 function dashboard(date = today): DailyDashboard {
-  const consumed = consumedNutrition()
+  const consumed = consumedNutrition(date)
   const target: NutritionValues = {
     calories: currentUser.nutritionTarget.targetCalories,
     protein: currentUser.nutritionTarget.protein,
@@ -100,49 +103,54 @@ function dashboard(date = today): DailyDashboard {
   return {
     userId: currentUser.id,
     date,
-    target,
+    target: missingHistoricalTarget && date < today ? null : target,
     consumed,
-    remaining: {
+    remaining: missingHistoricalTarget && date < today ? null : {
       calories: target.calories - consumed.calories,
       protein: target.protein - consumed.protein,
       carbs: target.carbs - consumed.carbs,
       fat: target.fat - consumed.fat,
     },
-    foodLogs: [...foodLogs],
+    foodLogs: foodLogs.filter((log) => log.eatenAt.startsWith(`${date}T`)),
   }
 }
 
 function nutritionTrend(endDate = today): NutritionTrend {
-  const consumed = consumedNutrition()
-  const hasLogs = foodLogs.length > 0
   const startDate = offsetDate(endDate, -6)
+  const points = Array.from({ length: 7 }, (_, index) => {
+    const date = offsetDate(startDate, index)
+    return {
+      date,
+      ...consumedNutrition(date),
+      targetCalories: missingHistoricalTarget && date < today ? 0 : currentUser.nutritionTarget.targetCalories,
+      logCount: foodLogs.filter((log) => log.eatenAt.startsWith(`${date}T`)).length,
+    }
+  })
+  const loggedDays = points.filter((point) => point.logCount > 0)
+  const withTarget = loggedDays.filter((point) => point.targetCalories > 0)
   return {
     startDate,
     endDate,
-    daysLogged: hasLogs ? 1 : 0,
-    averageCalories: hasLogs ? consumed.calories : 0,
-    averageTargetCalories: currentUser.nutritionTarget.targetCalories,
-    points: Array.from({ length: 7 }, (_, index) => {
-      const date = offsetDate(startDate, index)
-      const isEndDate = date === endDate
-      return {
-        date,
-        ...(isEndDate ? consumed : { calories: 0, protein: 0, carbs: 0, fat: 0 }),
-        targetCalories: currentUser.nutritionTarget.targetCalories,
-        logCount: isEndDate ? foodLogs.length : 0,
-      }
-    }),
+    daysLogged: loggedDays.length,
+    averageCalories: loggedDays.reduce((sum, point) => sum + point.calories, 0) / (loggedDays.length || 1),
+    averageTargetCalories: withTarget.reduce((sum, point) => sum + point.targetCalories, 0) / (withTarget.length || 1),
+    points,
   }
 }
 
-function weightTrend(): WeightTrend {
+function weightTrend(endDate = today): WeightTrend {
+  const startDate = offsetDate(endDate, -29)
+  const points = [...weightLogs.entries()]
+    .filter(([date]) => date >= startDate && date <= endDate)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([recordedDate, weightKg]) => ({ recordedDate, weightKg, sevenDayAverageKg: weightKg, averageSampleDays: 1 }))
   return {
-    startDate: today,
-    endDate: today,
-    firstWeightKg: null,
-    latestWeightKg: null,
-    changeKg: null,
-    points: [],
+    startDate,
+    endDate,
+    firstWeightKg: points[0]?.weightKg ?? null,
+    latestWeightKg: points.at(-1)?.weightKg ?? null,
+    changeKg: points.length > 1 ? points.at(-1)!.weightKg - points[0].weightKg : null,
+    points,
   }
 }
 
@@ -172,7 +180,7 @@ function installBackendStub() {
       body,
     })
 
-    if (method === 'POST' && url.pathname === '/api/auth/login') {
+    if (method === 'POST' && (url.pathname === '/api/auth/login' || url.pathname === '/api/auth/register')) {
       return json({
         accessToken: 'test-access-token',
         tokenType: 'Bearer',
@@ -182,7 +190,8 @@ function installBackendStub() {
     }
 
     if (method === 'GET' && url.pathname === `/api/users/${currentUser.id}/dashboard`) {
-      return json(dashboard(url.searchParams.get('date') ?? today))
+      const date = url.searchParams.get('date') ?? today
+      return json(dashboard(date))
     }
 
     if (method === 'GET' && url.pathname === '/api/me/nutrition-trend') {
@@ -190,7 +199,19 @@ function installBackendStub() {
     }
 
     if (method === 'GET' && url.pathname === '/api/me/weight-trend') {
-      return json(weightTrend())
+      return json(weightTrend(url.searchParams.get('endDate') ?? today))
+    }
+
+    if (method === 'PUT' && url.pathname.startsWith('/api/me/weight-logs/')) {
+      const recordedDate = url.pathname.split('/').at(-1)!
+      const { weightKg } = body as { weightKg: number }
+      weightLogs.set(recordedDate, weightKg)
+      return json({ id: 1, recordedDate, weightKg })
+    }
+
+    if (method === 'PUT' && url.pathname === '/api/me/profile') {
+      currentUser = { ...currentUser, ...body as Partial<UserProfile> }
+      return json(currentUser)
     }
 
     if (method === 'GET' && url.pathname === '/api/me/foods/recent') {
@@ -266,6 +287,8 @@ describe('FitPilot 核心饮食流程', () => {
     currentUser = newUser()
     foodLogs = []
     requests = []
+    missingHistoricalTarget = false
+    weightLogs = new Map()
     window.localStorage.clear()
     installBackendStub()
   })
@@ -375,5 +398,123 @@ describe('FitPilot 核心饮食流程', () => {
       }))
     })
     expect(await screen.findByRole('button', { current: 'date' })).toHaveAccessibleName(/饮食记录/)
+  })
+
+  it('历史日期没有营养目标时仍可补录和修改体重', async () => {
+    missingHistoricalTarget = true
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(screen.getByLabelText('邮箱'), 'zhengyi@example.com')
+    await user.type(screen.getByLabelText('密码'), 'FitPilot123')
+    await user.click(screen.getByRole('button', { name: '登录 FitPilot' }))
+    await screen.findByLabelText('体重记录日期')
+
+    const previousDate = offsetDate(today, -1)
+    fireEvent.change(screen.getByLabelText('选择饮食记录日期'), { target: { value: previousDate } })
+    expect(await screen.findByText(/该日期尚未建立营养目标/)).toBeInTheDocument()
+    expect(await screen.findByText('补录历史体重')).toBeInTheDocument()
+    expect(screen.getByLabelText('体重记录日期')).toHaveValue(previousDate)
+    await user.type(screen.getByLabelText('体重，单位 kg'), '75.2')
+    await user.click(screen.getByRole('button', { name: '保存体重' }))
+    expect(await screen.findByText('已保存，这一天的记录可以随时修改。')).toBeInTheDocument()
+    expect(requests).toContainEqual(expect.objectContaining({
+      path: `/api/me/weight-logs/${previousDate}`,
+      method: 'PUT',
+      authorization: 'Bearer test-access-token',
+      body: { weightKg: 75.2 },
+    }))
+
+    await user.clear(screen.getByLabelText('体重，单位 kg'))
+    await user.type(screen.getByLabelText('体重，单位 kg'), '75.4')
+    await user.click(screen.getByRole('button', { name: '更新体重' }))
+    await waitFor(() => expect(weightLogs.get(previousDate)).toBe(75.4))
+    expect(weightLogs.size).toBe(1)
+
+    fireEvent.change(screen.getByLabelText('体重记录日期'), { target: { value: today } })
+    expect(await screen.findByText('记录今天体重')).toBeInTheDocument()
+    expect(screen.getByLabelText('选择饮食记录日期')).toHaveValue(previousDate)
+    fireEvent.change(screen.getByLabelText('体重记录日期'), { target: { value: previousDate } })
+    await waitFor(() => expect(screen.getByLabelText('体重，单位 kg')).toHaveValue(75.4))
+    expect(screen.getByLabelText('体重记录日期')).toHaveAttribute('max', today)
+  })
+
+  it('注册表单不再要求重复填写训练次数', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: '创建账户' }))
+    expect(screen.queryByLabelText('每周训练次数')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('昵称'), 'Test')
+    await user.type(screen.getByLabelText('邮箱'), 'test@example.com')
+    await user.type(screen.getByLabelText('密码'), 'password123')
+    await user.selectOptions(screen.getByLabelText('日常活动水平'), 'VERY_ACTIVE')
+    await user.click(screen.getByRole('button', { name: '创建账户并计算目标' }))
+    await screen.findByRole('heading', { name: '身体资料' })
+    const registration = requests.find((request) => request.path === '/api/auth/register')!
+    expect(registration.body).toMatchObject({ activityLevel: 'VERY_ACTIVE' })
+    expect(registration.body).not.toHaveProperty('weeklyTrainingFrequency')
+  })
+
+  it('无目标历史日期可以补记饮食，返回今天后仍显示当前目标', async () => {
+    missingHistoricalTarget = true
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(screen.getByLabelText('邮箱'), 'zhengyi@example.com')
+    await user.type(screen.getByLabelText('密码'), 'FitPilot123')
+    await user.click(screen.getByRole('button', { name: '登录 FitPilot' }))
+    await screen.findByLabelText('体重记录日期')
+
+    const previousDate = offsetDate(today, -1)
+    fireEvent.change(screen.getByLabelText('选择饮食记录日期'), { target: { value: previousDate } })
+    expect(await screen.findByText(/该日期尚未建立营养目标/)).toBeInTheDocument()
+    const progress = within(screen.getByRole('region', { name: '当日营养进度' }))
+    expect(progress.getByText('当天无目标')).toBeInTheDocument()
+    expect(progress.queryByLabelText(/已完成/)).not.toBeInTheDocument()
+
+    await user.type(await screen.findByLabelText('食物名称'), '熟米饭')
+    await user.click(await screen.findByRole('option', { name: /熟米饭/ }))
+    await user.type(screen.getByLabelText('食用克数'), '200')
+    await user.click(screen.getByRole('button', { name: '计算营养' }))
+    await user.click(await screen.findByRole('button', { name: '加入当日饮食' }))
+    expect(await screen.findByRole('button', { name: '修改熟米饭' })).toBeInTheDocument()
+    await waitFor(() => expect(progress.getByText('260')).toBeInTheDocument())
+    expect(progress.queryByText(/剩余/)).not.toBeInTheDocument()
+    expect((requests.find((request) => request.path === '/api/users/1/food-logs')?.body as { eatenAt: string }).eatenAt)
+      .toMatch(new RegExp(`^${previousDate}T`))
+    expect(screen.getByRole('button', { current: 'date' })).toHaveAccessibleName(/当天无目标/)
+
+    fireEvent.change(screen.getByLabelText('选择饮食记录日期'), { target: { value: today } })
+    expect(await screen.findByText('目标 2788 kcal')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '当日营养进度' })).not.toHaveTextContent('260')
+  })
+
+  it('有无目标日期混合时只比较有目标日期的摄入差值', () => {
+    const trend = nutritionTrend()
+    trend.daysLogged = 2
+    trend.averageCalories = 200
+    trend.averageTargetCalories = 2400
+    trend.points[0] = { ...trend.points[0], calories: 100, logCount: 1, targetCalories: 0 }
+    trend.points[6] = { ...trend.points[6], calories: 300, logCount: 1, targetCalories: 2400 }
+    render(<NutritionTrendPanel trend={trend} selectedDate={today} onSelectDate={() => {}} />)
+    const difference = screen.getByText('平均相差').parentElement!
+    expect(difference).toHaveTextContent('-2100')
+    expect(screen.getByRole('button', { name: /摄入 100 千卡，当天无目标/ })).toBeInTheDocument()
+  })
+
+  it('编辑身体资料只提交营养计算所需字段', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(screen.getByLabelText('邮箱'), 'zhengyi@example.com')
+    await user.type(screen.getByLabelText('密码'), 'FitPilot123')
+    await user.click(screen.getByRole('button', { name: '登录 FitPilot' }))
+    await user.click(await screen.findByRole('button', { name: '编辑身体资料' }))
+    const panel = within(screen.getByRole('region', { name: '身体资料' }))
+    expect(panel.queryByLabelText('每周训练频率')).not.toBeInTheDocument()
+    expect(panel.queryByText(/每周训练/)).not.toBeInTheDocument()
+    await user.selectOptions(panel.getByLabelText('活动水平'), 'VERY_ACTIVE')
+    await user.click(panel.getByRole('button', { name: '保存并重新计算' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('身体资料已保存')
+    expect(requests.find((request) => request.path === '/api/me/profile')?.body).toEqual({
+      age: 22, heightCm: 183, weightKg: 76, activityLevel: 'VERY_ACTIVE',
+    })
   })
 })

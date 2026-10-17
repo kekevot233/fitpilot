@@ -2,7 +2,7 @@
 
 > 工作目录：`D:\code\fitapp`  
 > 当前阶段：网页端饮食记录 MVP；后端 Spring Boot + PostgreSQL；前端 React + Vite。  
-> 最后更新：2026-10-15
+> 最后更新：2026-10-17
 
 ## 文档维护规则
 
@@ -68,6 +68,7 @@ D:\code\fitapp
 - 主界面调整饮食计划（减脂 / 维持 / 轻盈增肌），从今天生效并保留历史目标。
 - AI 菜品营养估算：输入菜名和克数，查看估算依据并确认或修改后记入当天饮食。
 - 体重录入和趋势图。
+- 没有生效营养目标的历史日期也可补记饮食，显示实际摄入并明确提示当天无目标。
 
 ## 关键设计与文件定位
 
@@ -136,7 +137,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 ## 身体资料更新与营养目标重算（已实现）
 
-主页新增默认收起的“身体资料”面板。用户可修改年龄、身高、计划体重基准、活动水平和每周训练频率；保存后继续沿用当前减脂 / 维持 / 轻盈增肌目标，并重新计算 BMR、TDEE、热量与三大营养素。
+主页新增默认收起的“身体资料”面板。用户可修改年龄、身高、计划体重基准和活动水平；保存后继续沿用当前减脂 / 维持 / 轻盈增肌目标，并重新计算 BMR、TDEE、热量与三大营养素。
 
 - 接口：`PUT /api/me/profile`，用户 ID 只从 JWT 获取。
 - `UserProfileService.updateProfile` 在一个事务中更新 `users` 并新增今天生效的 `nutrition_targets` 记录，避免资料与目标只成功一半。
@@ -144,6 +145,26 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 每日 `weight_logs` 只负责趋势，不会自动改变计划体重基准。这样可以避免水分波动导致每日热量目标跟着抖动；用户确认保存身体资料时才会重算。
 - 前端组件：`web/src/components/BodyProfilePanel.tsx`。
 - 验证：前端 `npm run build` 成功；后端 `mvn -o test` 共 49 项通过。
+
+## 无目标历史日期饮食补记（2026-10-17）
+
+- `GET /api/users/{userId}/dashboard?date=YYYY-MM-DD` 对已有用户始终返回当日摄入与饮食列表。日期早于首条营养目标时返回 200，`target`、`remaining` 为 `null`；用户不存在仍返回 404。
+- `FoodLogService` 不再因为历史目标缺失而中断日志查询，不创建、不回填目标，也不会用当前计划覆盖过去的含义。已有目标日期仍按生效日期计算剩余量。
+- `DailyDashboardResponse` 的可空字段在 OpenAPI 中注明；网页 `DailyDashboard` 类型同步改为可空。
+- `NutritionProgress` 无目标时显示热量和三大营养素实际摄入，隐藏剩余量、目标比例与完成环；页面提示可继续补记饮食和体重。食物表单在历史日期显示“加入当日饮食”。
+- 七日趋势继续将缺失目标的 `targetCalories=0` 视为无目标，不画目标线，日期说明显示“当天无目标”。平均摄入涵盖所有有记录日期；平均目标和平均相差仅比较同时有记录和目标的日期，避免两个不同样本平均数相减。
+- 回归覆盖空白/已有摄入的无目标日期、用户不存在、目标历史、真实 PostgreSQL 中不生成目标、前端历史食物时间戳与返回今天后的日期隔离，以及真实浏览器刷新后记录仍可读取。
+- 本地验证：79 个快速单元/MVC 测试、2 个 PostgreSQL 集成测试、8 个 Vitest 测试及生产构建通过；开发 Compose 前后端已更新并健康运行，保留原数据库数据卷。
+
+## 简化营养资料与历史体重补录（2026-10-15）
+
+- 注册表单、身体资料编辑和资料摘要移除“每周训练次数/频率”；营养计算继续以活动水平计算 TDEE。
+- `RegisterRequest` 与 `UpdateUserProfileRequest` 的 `weeklyTrainingFrequency` 改为可选，显式传入时仍限制 1–7，兼容旧调用方。注册省略时保存旧训练 API 的兼容默认值 3；更新资料省略时保留原值。该字段不参与营养计算，也不从活动水平推断；未来训练网页应独立收集训练安排。
+- 问题根因：注册时首条营养目标从当天生效，查询更早日期的 Dashboard 返回 404；`App.tsx` 原来把体重表单放在 `dashboard` 成功分支下，导致本来支持历史日期的体重 API 无法从网页使用。
+- 体重展示与饮食 Dashboard 解耦，体重和饮食趋势各自显示错误与重试入口。缺少历史目标时显示中文原因，不再误报后端断线；不创建或回填虚构的历史营养目标。
+- 体重卡片新增独立日期控件，默认今天、只允许今天及以前日期。顶部饮食日期/趋势导航会同步体重日期，但在体重卡片单独选日期不会改变饮食日期。查询仍为所选日期截止的 30 天体重趋势。
+- 保存沿用 `PUT /api/me/weight-logs/{recordedDate}`；已有日期自动带入原体重并提供“更新体重”，同日修改不会新增重复记录。保存期间禁用体重和日期输入，成功反馈在趋势刷新后保留。
+- 本轮本地验证：75 个后端快速测试、2 个真实 PostgreSQL Testcontainers 集成测试、6 个 Vitest 流程测试与生产构建通过。Playwright 桌面/手机 Chromium 共 6 项通过，包含注册后补录昨天体重；Firefox 的 3 项在浏览器启动阶段报 `spawn UNKNOWN`，未执行业务断言。本机开发 Compose 已重建前后端且三服务 healthy，PostgreSQL 原数据卷保留。
 
 ## 一键复制前一天饮食（已实现）
 
@@ -222,7 +243,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 空数据库迁移验证已经固化为自动化测试，不再依赖人工创建临时 schema。
 
 - 测试文件：`backend/src/test/java/com/fitpilot/integration/DatabaseMigrationIT.java`。
-- `mvn test` 继续只运行 72 个快速单元 / MVC 测试，不要求 Docker。
+- `mvn test` 继续只运行 79 个快速单元 / MVC 测试，不要求 Docker。
 - `mvn -Pintegration-tests verify` 先运行快速测试，再由 Maven Failsafe 执行 `*IT` 集成测试。
 - Testcontainers 启动临时 `postgres:17-alpine`，Spring Boot 的 `@ServiceConnection` 自动注入 JDBC 连接；测试结束后 Ryuk 自动清理容器。
 - 集成测试关闭 Flyway 自动基线，从真正的空库执行 V1 → V2 → V3，并让 Hibernate `validate` 检查实体映射。
@@ -270,7 +291,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 ## 网页核心流程测试（已实现）
 
-网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，并包含三条跨组件流程测试。
+网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，现有八条测试覆盖跨组件流程和趋势比较规则。
 
 - 测试文件：`web/src/App.core-flow.test.tsx`。
 - 测试环境初始化：`web/src/test/setup.ts`。
@@ -278,11 +299,13 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 覆盖流程：从未登录页面填写邮箱和密码 → 保存 access token → 加载 Dashboard → 搜索并选择熟米饭 → 输入 200g 和午餐 → 预览营养 → 保存饮食记录 → 切换为减脂计划。
 - 第二条流程从已有饮食记录生成“最近记录”响应，验证页面显示“上次 280g · 晚餐”，选择后克数和餐次均自动带入。
 - 第三条流程点击七日趋势中的昨天，验证日期控件同步更新、请求携带目标日期，并在刷新后标记当前选中柱。
+- 其余流程覆盖缺少历史目标时补录/修改体重、体重日期与饮食日期独立操作，以及注册/资料编辑不再提交训练次数。
+- 2026-10-17 增加无目标历史日期的饮食补记与返回今天的数据隔离，以及有/无目标日期混合时的趋势差值测试。
 - 测试通过全局 `fetch` stub 保留真实 `api.ts` 的调用路径，验证登录请求、饮食记录请求和计划更新请求的 HTTP 方法与 JSON；同时验证登录后的请求包含 `Authorization: Bearer test-access-token`。
 - 测试后端是内存中的确定性响应，不连接 8080 或 PostgreSQL。它验证 React 页面协作和前端 API 契约；真实 SQL/Flyway 由后端 Testcontainers 测试负责。
 - 这些测试使用内存响应，适合快速、稳定地定位 React 组件协作和 API 契约问题；真实部署链路由下一节的 Playwright 测试补足。
 - 新增依赖后发现的 `source-map-js 1.2.1` 审计问题已升级到 1.2.2；最近一次 npm 审计为 0 个已知漏洞。
-- 最近验证：`npm test` 为 3 个测试通过；`npm run build` 通过。
+- 最近验证：`npm test` 为 8 个测试通过；`npm run build` 通过。
 
 ## Playwright 真实浏览器端到端测试（已实现）
 
@@ -458,7 +481,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-最近一次已通过：前端 `3` 个 Vitest 核心流程测试、跨三个浏览器/视口的 `9` 个 Playwright 执行项和生产构建成功；后端 `72` 个快速测试和 `2` 个 PostgreSQL Testcontainers 集成测试全部通过。完整结果见 [GitHub Actions 运行 38712121774](https://github.com/zhengyi123452/fitpilot/actions/runs/38712121774)。本机 Docker Desktop 当前不可用，所以集成测试与生产镜像验证由 GitHub Ubuntu runner 完成。
+当前本地验证（2026-10-17）：前端 `8` 个 Vitest 测试和生产构建通过；后端 `79` 个快速测试和 `2` 个 PostgreSQL Testcontainers 集成测试通过。Docker Desktop 已可用，开发 Compose 前后端已重建且三服务 healthy。Playwright 桌面/手机 Chromium `6` 项通过，包含无目标日期的历史饮食和体重补录；本机 Firefox 曾报启动 `spawn UNKNOWN`，本轮将 Firefox 验证交给 Ubuntu CI。先前版本的完整跨浏览器 CI 记录见 [GitHub Actions 运行 38712121774](https://github.com/zhengyi123452/fitpilot/actions/runs/38712121774)，不代表本轮修改已通过远端 CI。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 

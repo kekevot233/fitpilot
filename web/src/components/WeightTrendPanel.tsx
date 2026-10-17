@@ -4,6 +4,8 @@ import type { WeightTrend } from '../types'
 
 type Props = {
   selectedDate: string
+  today: string
+  onSelectDate: (date: string) => void
   trend: WeightTrend
   onSaved: () => Promise<void>
 }
@@ -32,7 +34,7 @@ function linePath(points: ChartPoint[]) {
   return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
 }
 
-export function WeightTrendPanel({ selectedDate, trend, onSaved }: Props) {
+export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onSaved }: Props) {
   const [weightKg, setWeightKg] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -42,9 +44,7 @@ export function WeightTrendPanel({ selectedDate, trend, onSaved }: Props) {
 
   useEffect(() => {
     setWeightKg(selectedPoint ? String(selectedPoint.weightKg) : '')
-    setError('')
-    setSaved(false)
-  }, [selectedDate, selectedPoint])
+  }, [selectedDate, selectedPoint?.weightKg])
 
   const chart = useMemo(() => {
     if (trend.points.length < 2) return null
@@ -69,6 +69,7 @@ export function WeightTrendPanel({ selectedDate, trend, onSaved }: Props) {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    if (saving) return
     const value = Number(weightKg)
     if (!Number.isFinite(value) || value < 30 || value > 350) {
       setError('请输入 30 到 350 kg 之间的体重。')
@@ -107,10 +108,21 @@ export function WeightTrendPanel({ selectedDate, trend, onSaved }: Props) {
 
       <div className="weight-panel-content">
         <form className="weight-form" onSubmit={handleSubmit}>
-          <div>
-            <span>{selectedDate === trend.endDate ? '记录今天体重' : '记录该日期体重'}</span>
-            <strong>{selectedDate}</strong>
-          </div>
+          <label className="weight-date-field">
+            <span>{selectedDate === today ? '记录今天体重' : '补录历史体重'}</span>
+            <input
+              type="date"
+              value={selectedDate}
+              max={today}
+              required
+              disabled={saving}
+              aria-label="体重记录日期"
+              onChange={(event) => {
+                const date = event.target.value
+                if (date && date <= today) onSelectDate(date)
+              }}
+            />
+          </label>
           <label className="input-with-unit">
             <input
               type="number"
@@ -118,8 +130,12 @@ export function WeightTrendPanel({ selectedDate, trend, onSaved }: Props) {
               max="350"
               step="0.01"
               required
+              disabled={saving}
               value={weightKg}
-              onChange={(event) => setWeightKg(event.target.value)}
+              onChange={(event) => {
+                setWeightKg(event.target.value)
+                setSaved(false)
+              }}
               placeholder="例如 75.80"
               aria-label="体重，单位 kg"
             />

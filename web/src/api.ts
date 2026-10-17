@@ -77,7 +77,6 @@ export function register(input: {
   weightKg: number
   activityLevel: ActivityLevel
   goal: Goal
-  weeklyTrainingFrequency: number
 }) {
   return request<AuthResponse>('/api/auth/register', {
     method: 'POST',
@@ -101,7 +100,6 @@ export function updateProfile(input: {
   heightCm: number
   weightKg: number
   activityLevel: ActivityLevel
-  weeklyTrainingFrequency: number
 }) {
   return request<UserProfile>('/api/me/profile', {
     method: 'PUT',
