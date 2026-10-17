@@ -305,6 +305,8 @@ Invoke-RestMethod -Method Put `
   -Body $weightBody
 ```
 
+Delete an incorrect entry with `DELETE /api/me/weight-logs/YYYY-MM-DD` and the Bearer token. The server deletes only the authenticated user's record on that date, returns HTTP `204` on success and `404` when that user has no matching record. Other users' records on the same date are unaffected. The web UI asks for confirmation and refreshes the trend after deletion; profile weight and nutrition targets are independent.
+
 Read the latest 30 calendar days, including a seven-day moving average calculated from the available records in each trailing seven-day window:
 
 ```powershell

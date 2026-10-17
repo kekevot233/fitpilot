@@ -49,6 +49,7 @@ export default function App() {
   const [weightDate, setWeightDate] = useState(today)
   const dataVersion = useRef(0)
   const weightVersion = useRef(0)
+  const activeWeightQuery = useRef('')
 
   const refreshDashboard = useCallback(async () => {
     if (!user) return
@@ -68,6 +69,7 @@ export default function App() {
 
   const refreshWeightTrend = useCallback(async () => {
     if (!user) return
+    if (activeWeightQuery.current !== `${user.id}:${weightDate}`) return
     const version = weightVersion.current
     setWeightError('')
     try {
@@ -113,10 +115,14 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return
+    activeWeightQuery.current = `${user.id}:${weightDate}`
     setWeightTrend(null)
     void refreshWeightTrend()
-    return () => { weightVersion.current += 1 }
-  }, [refreshWeightTrend, user])
+    return () => {
+      weightVersion.current += 1
+      activeWeightQuery.current = ''
+    }
+  }, [refreshWeightTrend, user, weightDate])
 
   function handleDateChanged(date: string) {
     if (!date || date > today) return
@@ -132,6 +138,7 @@ export default function App() {
   function handleLogout() {
     dataVersion.current += 1
     weightVersion.current += 1
+    activeWeightQuery.current = ''
     clearAccessToken()
     setUser(null)
     setDashboard(null)

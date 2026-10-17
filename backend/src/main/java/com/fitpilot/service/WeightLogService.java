@@ -95,6 +95,13 @@ public class WeightLogService {
         return new WeightTrendResponse(startDate, endDate, firstWeight, latestWeight, change, points);
     }
 
+    @Transactional
+    public void delete(long userId, LocalDate recordedDate) {
+        WeightLog log = weightLogRepository.findByUserIdAndRecordedDate(userId, recordedDate)
+                .orElseThrow(() -> new ResourceNotFoundException("No weight log exists on " + recordedDate + "."));
+        weightLogRepository.delete(log);
+    }
+
     private WeightLogResponse toResponse(WeightLog log) {
         return new WeightLogResponse(log.getId(), log.getRecordedDate(), log.getWeightKg());
     }

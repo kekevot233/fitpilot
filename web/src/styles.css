@@ -1122,6 +1122,79 @@ main {
   min-width: 0;
 }
 
+.weight-records {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid #edf1ee;
+}
+
+.weight-records summary {
+  cursor: pointer;
+  color: #315448;
+  font-weight: 600;
+}
+
+.weight-records > p {
+  color: #7f8e88;
+  font-size: 12px;
+}
+
+.weight-record-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.weight-record-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf1ee;
+  font-size: 12px;
+}
+
+.weight-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.weight-record-actions .secondary-button {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.weight-delete-button {
+  color: #ab4d35;
+}
+
+.weight-delete-confirm {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #efcfc5;
+  border-radius: 12px;
+  background: #fff9f6;
+}
+
+.weight-delete-confirm p {
+  margin: 0 0 12px;
+}
+
+@media (max-width: 480px) {
+  .weight-record-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .weight-record-actions {
+    grid-column: 1 / -1;
+  }
+}
+
 .weight-metrics {
   margin-bottom: 11px;
   display: flex;

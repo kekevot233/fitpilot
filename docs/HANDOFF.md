@@ -146,6 +146,15 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 前端组件：`web/src/components/BodyProfilePanel.tsx`。
 - 验证：前端 `npm run build` 成功；后端 `mvn -o test` 共 49 项通过。
 
+## 体重明细与误录删除（2026-10-17）
+
+- 体重卡片新增默认收起的“体重记录明细”，复用当前 30 天趋势的 `points`，按日期倒序显示并注明区间。点击编辑会选择该日期并带入原体重；“回到今天”恢复今天的录入入口，不改变饮食日期。
+- 新接口：`DELETE /api/me/weight-logs/{recordedDate}`，成功返回 204。用户 ID 从 JWT 读取；Service 在事务中按 `userId + recordedDate` 查询再删除，不能通过客户端参数删除其他用户记录；找不到自己的记录返回 404。无需数据库迁移。
+- 删除需在页面再次确认，可取消。请求期间禁用体重表单和明细操作；失败保留原记录、错误信息与重试入口，成功后重新查询趋势，更新原始曲线、七日均值与统计。最后一条删除后显示空状态；不会修改用户资料中的计划体重基准或营养目标。
+- `App.tsx` 对当前体重查询保存用户/日期标识；切换日期或退出登录后，旧保存/删除的回调不能重新加载旧日期覆盖当前趋势。
+- 新增 Controller/Service 测试覆盖 JWT 用户隔离、未登录拒绝、日期格式、找不到记录；PostgreSQL 集成测试验证双用户同日期互不影响及删除后均值重算。网页测试覆盖倒序明细、编辑、取消、失败重试、删除为空和请求未返回时切换日期；Playwright 注册场景扩展编辑/取消/删除及刷新后的持久化验证。
+- 本地验证：85 个快速测试、3 个 PostgreSQL Testcontainers 集成测试、11 个 Vitest 测试及生产构建通过；开发 Compose 前后端已更新，桌面/手机 Chromium 共 6 项通过，含展开明细时手机页面宽度检查。
+
 ## 无目标历史日期饮食补记（2026-10-17）
 
 - `GET /api/users/{userId}/dashboard?date=YYYY-MM-DD` 对已有用户始终返回当日摄入与饮食列表。日期早于首条营养目标时返回 200，`target`、`remaining` 为 `null`；用户不存在仍返回 404。
@@ -245,13 +254,13 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 空数据库迁移验证已经固化为自动化测试，不再依赖人工创建临时 schema。
 
 - 测试文件：`backend/src/test/java/com/fitpilot/integration/DatabaseMigrationIT.java`。
-- `mvn test` 继续只运行 79 个快速单元 / MVC 测试，不要求 Docker。
+- `mvn test` 继续只运行 85 个快速单元 / MVC 测试，不要求 Docker。
 - `mvn -Pintegration-tests verify` 先运行快速测试，再由 Maven Failsafe 执行 `*IT` 集成测试。
 - Testcontainers 启动临时 `postgres:17-alpine`，Spring Boot 的 `@ServiceConnection` 自动注入 JDBC 连接；测试结束后 Ryuk 自动清理容器。
 - 集成测试关闭 Flyway 自动基线，从真正的空库执行 V1 → V2 → V3，并让 Hibernate `validate` 检查实体映射。
 - 断言内容：迁移版本必须恰好为 1、2、3；必须存在 9 张业务表；`food_logs` 五个营养快照字段必须为 `NOT NULL`；默认食物必须初始化为 85 个；最近食物查询必须对同一种食物只返回最新一条份量和餐次。
 - Failsafe 测试 JVM 固定 `api.version=1.40`，用于兼容 Docker Desktop 29 的最低 API 限制，只影响集成测试。
-- 集成套件现有 2 个 PostgreSQL 测试。2026-10-15 [最近份量复用 GitHub CI](https://github.com/zhengyi123452/fitpilot/actions/runs/38709632256) 已在 Ubuntu Docker 环境确认空库迁移和最近份量去重查询全部通过。测试数据库为 Docker 临时库，不会连接或修改本地 `fitpilot` 数据库。
+- 集成套件现有 3 个 PostgreSQL 测试，验证空库迁移、最近份量/历史摄入及体重删除隔离/均值重算。测试数据库为 Docker 临时库，不会连接或修改本地 `fitpilot` 数据库。
 
 ## 最近使用食物（已实现）
 
@@ -293,7 +302,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 ## 网页核心流程测试（已实现）
 
-网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，现有八条测试覆盖跨组件流程和趋势比较规则。
+网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，现有十一条测试覆盖跨组件流程、趋势比较及体重记录管理。
 
 - 测试文件：`web/src/App.core-flow.test.tsx`。
 - 测试环境初始化：`web/src/test/setup.ts`。
@@ -307,7 +316,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 测试后端是内存中的确定性响应，不连接 8080 或 PostgreSQL。它验证 React 页面协作和前端 API 契约；真实 SQL/Flyway 由后端 Testcontainers 测试负责。
 - 这些测试使用内存响应，适合快速、稳定地定位 React 组件协作和 API 契约问题；真实部署链路由下一节的 Playwright 测试补足。
 - 新增依赖后发现的 `source-map-js 1.2.1` 审计问题已升级到 1.2.2；最近一次 npm 审计为 0 个已知漏洞。
-- 最近验证：`npm test` 为 8 个测试通过；`npm run build` 通过。
+- 最近验证：`npm test` 为 11 个测试通过；`npm run build` 通过。
 
 ## Playwright 真实浏览器端到端测试（已实现）
 
@@ -324,7 +333,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 - 工作流：`.github/workflows/ci.yml`；所有分支的 push、pull request 和手动 `workflow_dispatch` 均可触发，没有按路径跳过检查。
 - 工作流包含三个 `ubuntu-24.04` 任务：后端与前端先并行，二者通过后再运行端到端任务：
-  - `Backend tests and PostgreSQL integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 72 个快速测试，Failsafe 执行 1 个 `*IT` 测试并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
+  - `Backend tests and PostgreSQL integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 85 个快速测试，Failsafe 执行 3 个 PostgreSQL `*IT` 测试并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
   - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。
   - `Playwright end-to-end`：安装 Chromium、Firefox 与系统依赖，执行 `docker compose -f compose.deploy.yaml up --build --detach --wait`，再运行 `npm run test:e2e`。它验证与 Render 相同的单服务生产镜像和 PostgreSQL；无论成功失败都用相同 Compose 文件删除容器和临时数据卷。
 - 后端任务直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine`；E2E 任务另起完整 Compose 环境，并使用仅限该临时环境的数据库密码和 JWT secret。两者都不访问开发者数据库，也不需要仓库 secrets。
@@ -483,7 +492,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-当前验证（2026-10-17）：前端 `8` 个 Vitest 测试和生产构建通过；后端 `79` 个快速测试和 `2` 个 PostgreSQL Testcontainers 集成测试通过。本机开发 Compose 前后端已重建且三服务 healthy，桌面/手机 Chromium `6` 项通过；本机 Firefox 曾报启动 `spawn UNKNOWN`，GitHub Ubuntu CI 已在同一提交的生产镜像上确认含 Firefox 的 `9` 项全部通过。完整结果见 [GitHub Actions 39000605044](https://github.com/kekevot233/fitpilot/actions/runs/39000605044)。
+当前本地验证（2026-10-17）：前端 `11` 个 Vitest 测试和生产构建通过；后端 `85` 个快速测试和 `3` 个 PostgreSQL Testcontainers 集成测试通过。本机开发 Compose 前后端已重建且三服务 healthy，桌面/手机 Chromium `6` 项通过。本机 Firefox 曾报启动 `spawn UNKNOWN`，本轮生产镜像及 Firefox 验证交由 GitHub Ubuntu CI；前一轮已通过的生产镜像 CI 记录见 [GitHub Actions 39000605044](https://github.com/kekevot233/fitpilot/actions/runs/39000605044)。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 

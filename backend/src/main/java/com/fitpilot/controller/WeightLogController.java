@@ -13,8 +13,11 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.context.annotation.Profile;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -58,5 +61,12 @@ public class WeightLogController {
                 endDate == null ? LocalDate.now() : endDate,
                 days
         );
+    }
+
+    @DeleteMapping("/weight-logs/{recordedDate}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "删除当前用户某一天的体重记录")
+    public void delete(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate recordedDate) {
+        weightLogService.delete(userAccessGuard.currentUserId(), recordedDate);
     }
 }

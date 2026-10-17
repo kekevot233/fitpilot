@@ -130,6 +130,10 @@ export function getWeightTrend(endDate: string, days = 30) {
   )
 }
 
+export function deleteWeightLog(recordedDate: string) {
+  return request<void>(`/api/me/weight-logs/${recordedDate}`, { method: 'DELETE' })
+}
+
 export function searchFoods(keyword: string) {
   const query = keyword.trim()
     ? `?keyword=${encodeURIComponent(keyword.trim())}`

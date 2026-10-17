@@ -10,6 +10,7 @@ import com.fitpilot.dto.weight.WeightLogResponse;
 import com.fitpilot.dto.weight.WeightTrendResponse;
 import com.fitpilot.repository.UserRepository;
 import com.fitpilot.repository.WeightLogRepository;
+import com.fitpilot.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,10 +25,12 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class WeightLogServiceTest {
@@ -76,6 +79,26 @@ class WeightLogServiceTest {
 
         assertThat(existing.getWeightKg()).isEqualByComparingTo("75.30");
         verify(weightLogRepository).save(existing);
+    }
+
+    @Test
+    void deletesOnlyTheRecordFoundForTheCurrentUserAndDate() {
+        LocalDate date = LocalDate.of(2026, 10, 14);
+        WeightLog existing = log("75.80", date);
+        when(weightLogRepository.findByUserIdAndRecordedDate(7L, date)).thenReturn(Optional.of(existing));
+
+        service.delete(7L, date);
+
+        verify(weightLogRepository).delete(existing);
+    }
+
+    @Test
+    void refusesDeletionWhenTheCurrentUserHasNoRecordOnThatDate() {
+        LocalDate date = LocalDate.of(2026, 10, 14);
+
+        assertThatThrownBy(() -> service.delete(7L, date)).isInstanceOf(ResourceNotFoundException.class);
+        verify(weightLogRepository).findByUserIdAndRecordedDate(7L, date);
+        verify(weightLogRepository, never()).delete(any());
     }
 
     @Test

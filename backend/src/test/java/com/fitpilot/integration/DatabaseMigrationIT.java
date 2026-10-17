@@ -4,6 +4,9 @@ import com.fitpilot.domain.MealType;
 import com.fitpilot.dto.food.RecentFoodResponse;
 import com.fitpilot.service.FoodService;
 import com.fitpilot.service.FoodLogService;
+import com.fitpilot.service.WeightLogService;
+import com.fitpilot.dto.weight.UpsertWeightLogRequest;
+import com.fitpilot.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,8 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 @SpringBootTest(
@@ -39,6 +44,8 @@ class DatabaseMigrationIT {
     private FoodService foodService;
     @Autowired
     private FoodLogService foodLogService;
+    @Autowired
+    private WeightLogService weightLogService;
 
     @Test
     void buildsAValidatedApplicationSchemaFromAnEmptyDatabase() {
@@ -116,6 +123,39 @@ class DatabaseMigrationIT {
         assertThat(dashboard.foodLogs()).hasSize(1);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM nutrition_targets WHERE user_id = ?", Integer.class, userId)).isZero();
+    }
+
+    @Test
+    @Transactional
+    void deletesOnlyOwnWeightAndRecalculatesTheMovingAverage() {
+        Long firstUser = insertWeightUser("weight-first@example.com");
+        Long secondUser = insertWeightUser("weight-second@example.com");
+        LocalDate endDate = LocalDate.of(2026, 10, 17);
+        LocalDate earlierDate = endDate.minusDays(1);
+        weightLogService.upsert(firstUser, earlierDate, new UpsertWeightLogRequest(new BigDecimal("80")));
+        weightLogService.upsert(firstUser, endDate, new UpsertWeightLogRequest(new BigDecimal("78")));
+        weightLogService.upsert(secondUser, earlierDate, new UpsertWeightLogRequest(new BigDecimal("90")));
+        assertThat(weightLogService.getTrend(firstUser, endDate, 30).points().getLast().sevenDayAverageKg())
+                .isEqualByComparingTo("79");
+
+        weightLogService.delete(firstUser, earlierDate);
+
+        var trend = weightLogService.getTrend(firstUser, endDate, 30);
+        assertThat(trend.points()).hasSize(1);
+        assertThat(trend.points().getFirst().sevenDayAverageKg()).isEqualByComparingTo("78");
+        assertThat(trend.changeKg()).isNull();
+        assertThatThrownBy(() -> weightLogService.delete(firstUser, earlierDate))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(weightLogService.getTrend(secondUser, endDate, 30).latestWeightKg()).isEqualByComparingTo("90");
+    }
+
+    private Long insertWeightUser(String email) {
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO users (activity_level, age, gender, goal, height_cm, nickname,
+                                   weekly_training_frequency, weight_kg, email, password_hash)
+                VALUES ('MODERATE', 22, 'MALE', 'MAINTAIN', 183, 'Weight test', 3, 76, ?, 'test-hash')
+                RETURNING id
+                """, Long.class, email);
     }
 
     private Long insertFood(String name, String calories, String protein, String carbs, String fat) {

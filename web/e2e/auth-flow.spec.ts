@@ -107,4 +107,40 @@ test('注册后可在无目标历史日期补记饮食和体重', async ({ page 
     }))
     expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth + 1)
   }
+
+  await page.getByText('体重记录明细（1 条）', { exact: true }).click()
+  if (testInfo.project.name === 'mobile-chrome') {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      await page.evaluate(() => window.innerWidth + 1),
+    )
+  }
+  await page.getByRole('button', { name: `编辑 ${yesterday} 的体重`, exact: true }).click()
+  await expect(page.getByLabel('体重，单位 kg')).toHaveValue('58.2')
+  await page.getByLabel('体重，单位 kg').fill('58.4')
+  const weightUpdatePromise = page.waitForResponse((response) =>
+    response.request().method() === 'PUT'
+    && new URL(response.url()).pathname === `/api/me/weight-logs/${yesterday}`,
+  )
+  await page.getByRole('button', { name: '更新体重', exact: true }).click()
+  expect((await weightUpdatePromise).status()).toBe(200)
+  await expect(page.getByText('已保存，这一天的记录可以随时修改。')).toBeVisible()
+  await page.getByRole('button', { name: `删除 ${yesterday} 的体重`, exact: true }).click()
+  await page.getByRole('group', { name: '确认删除体重记录' }).getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByRole('button', { name: `删除 ${yesterday} 的体重`, exact: true })).toBeVisible()
+  await page.getByRole('button', { name: `删除 ${yesterday} 的体重`, exact: true }).click()
+  const weightDeletionPromise = page.waitForResponse((response) =>
+    response.request().method() === 'DELETE'
+    && new URL(response.url()).pathname === `/api/me/weight-logs/${yesterday}`,
+  )
+  await page.getByRole('button', { name: '确认删除', exact: true }).click()
+  expect((await weightDeletionPromise).status()).toBe(204)
+  await expect(page.getByText('还没有体重记录', { exact: true })).toBeVisible()
+  await page.reload()
+  await page.getByLabel('选择饮食记录日期').fill(yesterday)
+  await expect(page.getByText('还没有体重记录', { exact: true })).toBeVisible()
+  if (testInfo.project.name === 'mobile-chrome') {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      await page.evaluate(() => window.innerWidth + 1),
+    )
+  }
 })

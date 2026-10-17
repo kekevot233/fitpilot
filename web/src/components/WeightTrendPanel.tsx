@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { upsertWeightLog } from '../api'
+import { deleteWeightLog, upsertWeightLog } from '../api'
 import type { WeightTrend } from '../types'
 
 type Props = {
@@ -39,6 +39,10 @@ export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onS
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [pendingDeleteDate, setPendingDeleteDate] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [notice, setNotice] = useState('')
+  const busy = saving || deleting
 
   const selectedPoint = trend.points.find((point) => point.recordedDate === selectedDate)
 
@@ -69,7 +73,7 @@ export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onS
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (saving) return
+    if (busy) return
     const value = Number(weightKg)
     if (!Number.isFinite(value) || value < 30 || value > 350) {
       setError('请输入 30 到 350 kg 之间的体重。')
@@ -79,6 +83,7 @@ export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onS
     setSaving(true)
     setError('')
     setSaved(false)
+    setNotice('')
     try {
       await upsertWeightLog(selectedDate, value)
       await onSaved()
@@ -87,6 +92,25 @@ export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onS
       setError((requestError as Error).message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!pendingDeleteDate || busy) return
+    const date = pendingDeleteDate
+    setDeleting(true)
+    setError('')
+    setSaved(false)
+    setNotice('')
+    try {
+      await deleteWeightLog(date)
+      setPendingDeleteDate(null)
+      setNotice(`已删除 ${date} 的体重记录。`)
+      await onSaved()
+    } catch (requestError) {
+      setError(`删除失败：${(requestError as Error).message}，请重试。`)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -115,7 +139,7 @@ export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onS
               value={selectedDate}
               max={today}
               required
-              disabled={saving}
+              disabled={busy}
               aria-label="体重记录日期"
               onChange={(event) => {
                 const date = event.target.value
@@ -130,7 +154,7 @@ export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onS
               max="350"
               step="0.01"
               required
-              disabled={saving}
+              disabled={busy}
               value={weightKg}
               onChange={(event) => {
                 setWeightKg(event.target.value)
@@ -141,11 +165,15 @@ export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onS
             />
             <span>kg</span>
           </label>
-          <button className="primary-button" disabled={saving} type="submit">
+          <button className="primary-button" disabled={busy} type="submit">
             {saving ? '保存中…' : selectedPoint ? '更新体重' : '保存体重'}
           </button>
           {saved && <p className="weight-saved">已保存，这一天的记录可以随时修改。</p>}
-          {error && <p className="form-error">{error}</p>}
+          {selectedDate !== today && (
+            <button className="secondary-button" type="button" disabled={busy} onClick={() => onSelectDate(today)}>
+              回到今天
+            </button>
+          )}
         </form>
 
         <div className="weight-chart-area">
@@ -180,6 +208,59 @@ export function WeightTrendPanel({ selectedDate, today, onSelectDate, trend, onS
           )}
         </div>
       </div>
+      {trend.points.length > 0 && (
+        <details className="weight-records">
+          <summary>体重记录明细（{trend.points.length} 条）</summary>
+          <p>显示 {trend.startDate} 至 {trend.endDate} 的记录，按日期倒序排列。</p>
+          <ul className="weight-record-list" aria-label="体重记录明细">
+            {[...trend.points].reverse().map((point) => (
+              <li key={point.recordedDate}>
+                <time dateTime={point.recordedDate}>{point.recordedDate}</time>
+                <strong>{point.weightKg.toFixed(2)} kg</strong>
+                <div className="weight-record-actions">
+                  <button type="button" className="secondary-button" disabled={busy}
+                    aria-label={`编辑 ${point.recordedDate} 的体重`}
+                    onClick={() => {
+                      setPendingDeleteDate(null)
+                      setWeightKg(String(point.weightKg))
+                      setSaved(false)
+                      setNotice('')
+                      setError('')
+                      onSelectDate(point.recordedDate)
+                    }}>
+                    编辑
+                  </button>
+                  <button type="button" className="secondary-button weight-delete-button" disabled={busy}
+                    aria-label={`删除 ${point.recordedDate} 的体重`}
+                    onClick={() => {
+                      setPendingDeleteDate(point.recordedDate)
+                      setError('')
+                      setNotice('')
+                    }}>
+                    删除
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {pendingDeleteDate && (
+        <div className="weight-delete-confirm" role="group" aria-label="确认删除体重记录">
+          <p>删除 {pendingDeleteDate} 的体重记录？删除后会重新计算趋势，且无法撤销。</p>
+          <div className="weight-record-actions">
+            <button className="secondary-button weight-delete-button" type="button" disabled={busy} onClick={handleDelete}>
+              {deleting ? '正在删除…' : '确认删除'}
+            </button>
+            <button className="secondary-button" type="button" disabled={busy} onClick={() => {
+              setPendingDeleteDate(null)
+              setError('')
+            }}>取消</button>
+          </div>
+        </div>
+      )}
+      {notice && <p className="weight-saved" role="status">{notice}</p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
     </section>
   )
 }

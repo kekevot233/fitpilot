@@ -35,6 +35,8 @@ let foodLogs: FoodLog[]
 let requests: RecordedRequest[]
 let missingHistoricalTarget: boolean
 let weightLogs: Map<string, number>
+let failWeightDeletion: boolean
+let pendingWeightDeletion: Promise<void> | null
 
 function nutritionTarget(goal: UserProfile['goal']) {
   if (goal === 'FAT_LOSS') {
@@ -209,6 +211,16 @@ function installBackendStub() {
       return json({ id: 1, recordedDate, weightKg })
     }
 
+    if (method === 'DELETE' && url.pathname.startsWith('/api/me/weight-logs/')) {
+      await pendingWeightDeletion
+      if (failWeightDeletion) {
+        failWeightDeletion = false
+        return json({ detail: 'Temporary deletion failure' }, 503)
+      }
+      weightLogs.delete(url.pathname.split('/').at(-1)!)
+      return new Response(null, { status: 204 })
+    }
+
     if (method === 'PUT' && url.pathname === '/api/me/profile') {
       currentUser = { ...currentUser, ...body as Partial<UserProfile> }
       return json(currentUser)
@@ -289,6 +301,8 @@ describe('FitPilot 核心饮食流程', () => {
     requests = []
     missingHistoricalTarget = false
     weightLogs = new Map()
+    failWeightDeletion = false
+    pendingWeightDeletion = null
     window.localStorage.clear()
     installBackendStub()
   })
@@ -452,6 +466,86 @@ describe('FitPilot 核心饮食流程', () => {
     const registration = requests.find((request) => request.path === '/api/auth/register')!
     expect(registration.body).toMatchObject({ activityLevel: 'VERY_ACTIVE' })
     expect(registration.body).not.toHaveProperty('weeklyTrainingFrequency')
+  })
+
+  it('按日期查看体重明细并编辑旧记录，不改变饮食日期', async () => {
+    const earlierDate = offsetDate(today, -2)
+    weightLogs = new Map([[earlierDate, 75.5], [today, 75]])
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(screen.getByLabelText('邮箱'), 'zhengyi@example.com')
+    await user.type(screen.getByLabelText('密码'), 'FitPilot123')
+    await user.click(screen.getByRole('button', { name: '登录 FitPilot' }))
+    await user.click(await screen.findByText('体重记录明细（2 条）'))
+    const rows = within(screen.getByRole('list', { name: '体重记录明细' })).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent(today)
+    expect(rows[1]).toHaveTextContent(earlierDate)
+
+    await user.click(screen.getByRole('button', { name: `编辑 ${earlierDate} 的体重` }))
+    await waitFor(() => expect(screen.getByLabelText('体重，单位 kg')).toHaveValue(75.5))
+    expect(screen.getByLabelText('体重记录日期')).toHaveValue(earlierDate)
+    expect(screen.getByLabelText('选择饮食记录日期')).toHaveValue(today)
+    await user.clear(screen.getByLabelText('体重，单位 kg'))
+    await user.type(screen.getByLabelText('体重，单位 kg'), '75.3')
+    await user.click(screen.getByRole('button', { name: '更新体重' }))
+    await screen.findByText('已保存，这一天的记录可以随时修改。')
+    expect(weightLogs.get(earlierDate)).toBe(75.3)
+    await user.click(screen.getByRole('button', { name: '回到今天' }))
+    await screen.findByText('记录今天体重')
+    expect(weightLogs.size).toBe(2)
+  })
+
+  it('删除体重需要确认，失败后保留记录并可重试，成功后显示空状态', async () => {
+    weightLogs = new Map([[today, 75]])
+    failWeightDeletion = true
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(screen.getByLabelText('邮箱'), 'zhengyi@example.com')
+    await user.type(screen.getByLabelText('密码'), 'FitPilot123')
+    await user.click(screen.getByRole('button', { name: '登录 FitPilot' }))
+    await user.click(await screen.findByText('体重记录明细（1 条）'))
+    await user.click(screen.getByRole('button', { name: `删除 ${today} 的体重` }))
+    await user.click(within(screen.getByRole('group', { name: '确认删除体重记录' })).getByRole('button', { name: '取消' }))
+    expect(requests.filter((request) => request.method === 'DELETE')).toHaveLength(0)
+    expect(weightLogs.size).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: `删除 ${today} 的体重` }))
+    await user.click(screen.getByRole('button', { name: '确认删除' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('删除失败')
+    expect(weightLogs.size).toBe(1)
+    expect(screen.getByRole('list', { name: '体重记录明细' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认删除' }))
+    expect(await screen.findByRole('status')).toHaveTextContent(`已删除 ${today} 的体重记录。`)
+    expect(await screen.findByText('还没有体重记录')).toBeInTheDocument()
+    expect(screen.getByLabelText('体重，单位 kg')).toHaveValue(null)
+    expect(weightLogs.size).toBe(0)
+    expect(requests.filter((request) => request.method === 'DELETE')).toEqual([
+      expect.objectContaining({ path: `/api/me/weight-logs/${today}`, authorization: 'Bearer test-access-token' }),
+      expect.objectContaining({ path: `/api/me/weight-logs/${today}`, authorization: 'Bearer test-access-token' }),
+    ])
+  })
+
+  it('删除尚未返回时切换日期，旧操作不会重新请求或覆盖旧日期的趋势', async () => {
+    const earlierDate = offsetDate(today, -1)
+    weightLogs = new Map([[earlierDate, 74], [today, 75]])
+    let releaseDeletion!: () => void
+    pendingWeightDeletion = new Promise<void>((resolve) => { releaseDeletion = resolve })
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(screen.getByLabelText('邮箱'), 'zhengyi@example.com')
+    await user.type(screen.getByLabelText('密码'), 'FitPilot123')
+    await user.click(screen.getByRole('button', { name: '登录 FitPilot' }))
+    await user.click(await screen.findByText('体重记录明细（2 条）'))
+    await user.click(screen.getByRole('button', { name: `删除 ${today} 的体重` }))
+    await user.click(screen.getByRole('button', { name: '确认删除' }))
+    expect(await screen.findByRole('button', { name: '正在删除…' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('选择饮食记录日期'), { target: { value: earlierDate } })
+    await waitFor(() => expect(screen.getByLabelText('体重，单位 kg')).toHaveValue(74))
+
+    releaseDeletion()
+    await waitFor(() => expect(weightLogs.has(today)).toBe(false))
+    expect(screen.getByLabelText('体重记录日期')).toHaveValue(earlierDate)
+    expect(requests.filter((request) => request.path === `/api/me/weight-trend?endDate=${today}&days=30`)).toHaveLength(1)
   })
 
   it('无目标历史日期可以补记饮食，返回今天后仍显示当前目标', async () => {
