@@ -13,6 +13,8 @@
 
 每完成一个可交付阶段，必须同步检查并更新这两份文档的“最后更新”、功能状态、测试数量、已知限制和下一步计划。运行方式、环境变量或项目入口变化时，还要同步更新根目录 `README.md`。Project Summary 不记录冗长的调试流水，Handoff 则要保留足够让新对话直接继续工作的技术上下文。
 
+测试频率遵循用户 2026-10-19 的要求：普通小改动不运行自动化测试、不触发完整 CI，只做必要的代码与配置检查；较大功能更新、架构调整或较大范围修改时再运行相应测试，需要整体回归时按需触发完整 CI。用户明确要求测试时照办。现有测试保留，不为每次小迭代重复运行；文档保留最近一次大更新的验证结果和对应提交，未重跑时不要写成当前提交已通过。
+
 ## 给新对话的任务背景
 
 用户是有少量 Java 基础、正在学习 Spring Boot 的学生。目标是把 FitPilot 做成可部署、可放进 GitHub 和简历的 Java / Agent 开发实习作品。
@@ -357,7 +359,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 ## GitHub Actions CI（已接入）
 
-- 工作流：`.github/workflows/ci.yml`；所有分支的 push、pull request 和手动 `workflow_dispatch` 均可触发，没有按路径跳过检查。
+- 工作流：`.github/workflows/ci.yml`；按用户 2026-10-19 要求，仅保留手动 `workflow_dispatch`，push 和 pull request 不自动触发。较大更新后在 GitHub Actions 页面选择 CI → Run workflow，或执行 `gh workflow run ci.yml --ref main`；普通小改动只做必要检查。
 - 工作流包含三个 `ubuntu-24.04` 任务：后端与前端先并行，二者通过后再运行端到端任务：
   - `Backend tests and PostgreSQL/Redis integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 104 个快速测试，Failsafe 执行 12 个 `*IT` 测试（PostgreSQL 4、独立 Redis 8）并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
   - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。

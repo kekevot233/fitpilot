@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  push:
-  pull_request:
+  # Run for substantial updates on demand, rather than every small push or PR.
   workflow_dispatch:
 
 permissions:

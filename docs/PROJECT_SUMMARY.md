@@ -102,7 +102,7 @@ Java 21 + Spring Boot 单体后端
 - **开发与生产拓扑分离**：日常 Docker Compose 使用 PostgreSQL、Redis、Spring Boot 与 Nginx/React，方便独立开发；根目录生产镜像把 React 静态资源打入 Spring Boot JAR，一个非 root Java 容器同时提供网页和同源 `/api`。
 - **基础设施即代码**：`render.yaml` 定义 Docker Web Service、私网 PostgreSQL 17 和 Redis Key Value，自动生成 JWT 密钥；production profile 禁止 Flyway 自动基线，新数据库必须执行完整版本迁移。
 - **可观测部署健康**：Actuator 只公开 `/actuator/health`，Docker 和 Render 使用同一路径检查应用与数据库就绪状态，业务 API 的 JWT 边界保持不变。
-- **持续集成**：GitHub Actions 先并行运行后端快速测试 / Testcontainers PostgreSQL 集成测试和前端 Vitest / TypeScript 检查 / 生产构建，再构建实际部署镜像并用 Playwright 验证桌面、移动端及跨浏览器真实链路；保留三类测试报告和失败诊断。
+- **按需持续集成**：较大更新后手动触发 GitHub Actions，先并行运行后端快速测试 / Testcontainers PostgreSQL、Redis 集成测试和前端 Vitest / TypeScript 检查 / 生产构建，再构建实际部署镜像并用 Playwright 验证桌面、移动端及跨浏览器真实链路；保留三类测试报告和失败诊断。普通小改动不跑测试，push 和 pull request 不自动触发。
 - **精确表示营养数值**：重量和营养数据使用 `BigDecimal`，减少浮点误差。
 - **内置与自定义食物共用模型**：内置食物的 `owner_id` 为空，自定义食物关联创建者，兼顾统一查询与用户隔离。
 - **归档代替直接删除**：自定义食物使用 `active=false` 软删除，避免破坏已经存在的饮食记录。
@@ -126,7 +126,7 @@ Java 21 + Spring Boot 单体后端
 
 2026-10-15 已在隔离生产 Compose 环境复验桌面与手机 Chromium 共 6 项，应用和 PostgreSQL 均 healthy，空库初始化 85 个食物；GitHub Ubuntu runner 随后在同一生产拓扑确认包含 Firefox 在内的 9 项全部通过。原 FitPilot 数据卷未被使用。
 
-以上数字是当前快照；新增功能后必须重新验证并同步更新，不能把旧结果长期保留为现状。
+以上数字是最近一次较大更新的验证快照，对应提交 `f2a1746`。按用户要求，普通小改动不重复测试；下一次较大更新验证后再同步数字和提交，不把旧结果描述为后续未验证提交的结果。
 
 ## 已知限制与技术债
 

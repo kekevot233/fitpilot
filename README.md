@@ -129,7 +129,7 @@ mvn -Pintegration-tests verify
 
 ## Continuous integration
 
-[GitHub Actions CI](https://github.com/kekevot233/fitpilot/actions/workflows/ci.yml) 在每次 push、pull request 和手动触发时自动运行：
+[GitHub Actions CI](https://github.com/kekevot233/fitpilot/actions/workflows/ci.yml) 按需运行：普通小改动不执行测试，较大功能更新、架构调整或较大范围修改后再验证，也可按用户要求运行。push 和 pull request 不自动触发；在 Actions 页面选择 **CI → Run workflow**，或执行 `gh workflow run ci.yml --ref main`：
 
 - 后端：Java 21 + Maven 快速测试、Testcontainers PostgreSQL / Redis 集成测试和打包。
 - 前端：Node.js 22 + `npm ci`、Vitest、TypeScript 检查和 Vite 生产构建。
