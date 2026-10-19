@@ -162,6 +162,27 @@ Only configured `LOGIN_TRUSTED_PROXIES` may supply forwarded source addresses; o
 
 `LOGIN_MAX_FAILURES`, `LOGIN_WINDOW_SECONDS` and `LOGIN_ATTEMPT_LEASE_SECONDS` configure the policy. When Redis cannot enforce protection, login returns a safe `503` with a five-second retry. Existing authenticated data operations continue, and core health intentionally excludes Redis. Redis state loss resets throttles: Compose persists AOF data, while the example free Render Key Value instance is not durable across restarts.
 
+## Built-in food search cache
+
+`GET /api/foods?keyword=...` caches only built-in food results in Redis. Custom foods are fetched from PostgreSQL for the authenticated user on every request, so creating, editing or archiving a custom food takes effect immediately. Results are combined and ordered by name, then ID. Nutrition calculations and saved food-log snapshots still use authoritative database values.
+
+`FOOD_CACHE_ENABLED` defaults to `true`; `FOOD_CACHE_TTL_SECONDS` defaults to `300` (valid range 1–3600). The shared hash `fitpilot:foods:search:v1` holds at most 128 query entries. Field names are SHA-256 digests of trimmed keywords; values contain public food DTOs, including empty results. Queries longer than 128 characters and serialized results over 262144 characters bypass caching. A Lua script enforces capacity and expiry atomically; new entries do not extend the current hash's lifetime. Concurrent misses may perform duplicate database reads, but cannot exceed the cache capacity.
+
+Database matching rules, including `LIKE` wildcards and case behavior, remain in the repository queries. Cache errors or malformed JSON fall back to PostgreSQL. A failed cache read skips the write attempt to avoid a second timeout. Built-in catalog updates can take up to the configured TTL to appear in search; for immediate refresh, delete only this cache hash. Do not flush Redis, which also stores login protection.
+
+From the project root, inspect the cache after searching for food:
+
+```powershell
+docker compose exec redis redis-cli HLEN fitpilot:foods:search:v1
+docker compose exec redis redis-cli TTL fitpilot:foods:search:v1
+```
+
+To invalidate only the food search cache:
+
+```powershell
+docker compose exec redis redis-cli DEL fitpilot:foods:search:v1
+```
+
 ## Read a dashboard profile
 
 ```powershell

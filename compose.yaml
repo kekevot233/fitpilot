@@ -31,6 +31,8 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/fitpilot
       REDIS_URL: redis://redis:6379
+      FOOD_CACHE_ENABLED: ${FOOD_CACHE_ENABLED:-true}
+      FOOD_CACHE_TTL_SECONDS: ${FOOD_CACHE_TTL_SECONDS:-300}
       LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
       LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-900}
       LOGIN_TRUSTED_PROXIES: web

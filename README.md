@@ -8,6 +8,8 @@ FitPilot 是一个面向健身新手和日常健身用户的饮食与训练规�
 
 登录使用 Redis 保护：同一账号与来源默认 15 分钟内连续失败 5 次进入冷却，页面显示重试倒计时。Redis 暂时不可用时新登录返回可重试提示，已登录的饮食和体重操作仍可使用。
 
+食物搜索会将内置食物结果缓存到 Redis，最长保留 5 分钟；自定义食物仍实时按用户从 PostgreSQL 查询，修改和归档立即生效。缓存故障会回退数据库，不阻断搜索。可用 `FOOD_CACHE_ENABLED=false` 关闭缓存，或通过 `FOOD_CACHE_TTL_SECONDS`（1–3600，默认 300）调整期限。
+
 ## Repository layout
 
 ```text
@@ -117,21 +119,21 @@ npm run test:e2e
 
 这条测试会连接实际网页、后端与 PostgreSQL，完成登录、记录饮食和调整计划；测试饮食记录会自动清理。
 
-启动 Docker Desktop 后，可以运行包含临时 PostgreSQL 的完整验证：
+启动 Docker Desktop 后，可以运行包含临时 PostgreSQL 和 Redis 的完整验证：
 
 ```powershell
 mvn -Pintegration-tests verify
 ```
 
-集成测试会从空数据库执行 Flyway 迁移并自动删除测试容器，不会修改本机的 `fitpilot` 数据库。
+集成测试会从空数据库执行 Flyway 迁移，并验证登录限流、搜索缓存命中/过期和自定义食物隔离；自动删除测试容器，不修改本机业务数据库或 Redis 状态。
 
 ## Continuous integration
 
 [GitHub Actions CI](https://github.com/kekevot233/fitpilot/actions/workflows/ci.yml) 在每次 push、pull request 和手动触发时自动运行：
 
-- 后端：Java 21 + Maven 快速测试、Testcontainers PostgreSQL 集成测试和打包。
+- 后端：Java 21 + Maven 快速测试、Testcontainers PostgreSQL / Redis 集成测试和打包。
 - 前端：Node.js 22 + `npm ci`、Vitest、TypeScript 检查和 Vite 生产构建。
-- 端到端：前两项通过后，用 Docker Compose 启动与 Render 相同的单服务生产镜像和 PostgreSQL，再由桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 验证注册、登录失败及核心饮食流程。
+- 端到端：前两项通过后，用 Docker Compose 启动与 Render 相同的单服务生产镜像、PostgreSQL 与 Redis，再由桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 验证注册、登录失败及核心饮食流程。
 
 后端、前端和 Playwright 报告在运行页面的 Artifacts 中保留 14 天；E2E 失败时还会保存容器状态和日志。CI 使用临时数据库卷，不需要配置应用密钥或外部数据库，并在结束时自动清理。配置和排错说明见[开发交接文档](docs/HANDOFF.md#github-actions-ci已接入)。
 

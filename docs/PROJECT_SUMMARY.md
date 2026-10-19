@@ -37,7 +37,7 @@ FitPilot 是一个面向健身新手、大学生和日常健身用户的饮食�
 ### 账户与营养计划
 
 - JWT 注册、登录和接口鉴权；后端根据登录身份访问用户数据。
-- Redis 登录失败限流：账号与来源分别计数，默认 15 分钟内失败 5 次进入冷却；支持多实例、429 重试倒计时及可信代理来源识别。
+- Redis 登录失败限流：按账号与来源组合计数，默认 15 分钟内失败 5 次进入冷却；支持多实例、429 重试倒计时及可信代理来源识别。
 - 用户身体资料保存与修改。
 - 营养设置只填写活动水平，注册及资料编辑无需重复填写每周训练次数。
 - 使用 Mifflin–St Jeor 公式计算 BMR 和 TDEE。
@@ -48,6 +48,7 @@ FitPilot 是一个面向健身新手、大学生和日常健身用户的饮食�
 
 - 85 个内置食物，覆盖常见原料和鱼香肉丝、宫保鸡丁、包子、饺子、油条、沙县鸡腿饭等中国常见食品。
 - 食物搜索、营养预览和按克数换算。
+- Redis 缓存内置食物搜索，最长保留 5 分钟，限制最多 128 条查询；自定义食物实时按用户隔离读取，编辑和归档立即生效；缓存故障自动回退数据库。
 - 饮食记录新增、修改、删除和复制前一天记录。
 - 可补记尚未建立营养目标的历史日期；显示实际摄入，不套用当前计划或虚构历史目标。
 - 饮食记录保存录入时的食物名称和每 100g 营养快照；之后修改食物模板不会改变历史数据。
@@ -83,13 +84,14 @@ Java 21 + Spring Boot 单体后端
 - 后端：Java 21、Maven、Spring Boot 3.4.5、Spring Web、Validation、Spring Data JPA、Spring Security、Actuator、Flyway、springdoc-openapi。
 - 前端：React、TypeScript、Vite。
 - 数据库：PostgreSQL。
-- 中间件：Redis，用于登录失败计数和并发预留；业务数据继续存于 PostgreSQL。
+- 中间件：Redis，用于登录失败计数、并发预留与内置食物搜索缓存；业务数据继续存于 PostgreSQL。
 - 架构选择：MVP 阶段使用结构清晰的单体应用，不提前引入微服务、消息队列或复杂 Agent 编排。
 
 ## 关键工程设计
 
 - **登录身份作为数据边界**：受保护接口从 JWT 获取当前用户，避免客户端通过伪造 `userId` 访问别人的数据。
 - **共享登录保护**：Redis Lua 原子处理失败计数、并发额度和过期；键使用账号/来源摘要，转发地址仅接受可信代理，Redis 故障时暂停登录而不影响已登录用户的数据操作。
+- **有界共享缓存与故障回退**：内置食物查询采用 Redis Hash 缓存，Lua 原子约束容量与固定 TTL，空结果同样缓存；私有食物实时查询，避免跨用户泄漏和写入后的陈旧结果。真实 Redis 测试确认命中减少内置食物查询，缓存异常回退 PostgreSQL。
 - **营养目标保留历史版本**：目标带有 `effectiveDate`，Dashboard 按日期选择当时有效的目标。
 - **无目标日期仍可记录事实**：历史 Dashboard 的目标与剩余量允许为空，实际摄入独立存在；趋势的目标与差值只比较有目标且有记录的日期。
 - **饮食记录保存事实快照**：`food_logs` 同时保存录入时的食物名称和营养值；`foods` 可以继续作为可修改模板，历史 Dashboard 与趋势不会被回写。
@@ -97,8 +99,8 @@ Java 21 + Spring Boot 单体后端
 - **真实数据库回归测试**：Testcontainers 在 Docker 临时 PostgreSQL 17 中从空库执行全部 Flyway 迁移，并验证表结构、约束与初始化数据，不依赖开发者本地数据库状态。
 - **网页核心流程回归测试**：Vitest、Testing Library 和 jsdom 从登录界面驱动“登录 → 搜索并记录食物 → 切换减脂计划”，同时校验 REST 路径、请求体和 JWT 请求头。
 - **真实浏览器端到端测试**：Playwright 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 连接实际生产镜像与 PostgreSQL，覆盖注册、错误登录及“记录食物 → 调整计划”，并在结束后清理临时饮食记录。
-- **开发与生产拓扑分离**：日常 Docker Compose 继续使用 PostgreSQL、Spring Boot 与 Nginx/React，方便独立开发；根目录生产镜像把 React 静态资源打入 Spring Boot JAR，一个非 root Java 容器同时提供网页和同源 `/api`。
-- **基础设施即代码**：`render.yaml` 定义 Docker Web Service 与私网 PostgreSQL 17，自动生成 JWT 密钥；production profile 禁止 Flyway 自动基线，新数据库必须执行完整版本迁移。
+- **开发与生产拓扑分离**：日常 Docker Compose 使用 PostgreSQL、Redis、Spring Boot 与 Nginx/React，方便独立开发；根目录生产镜像把 React 静态资源打入 Spring Boot JAR，一个非 root Java 容器同时提供网页和同源 `/api`。
+- **基础设施即代码**：`render.yaml` 定义 Docker Web Service、私网 PostgreSQL 17 和 Redis Key Value，自动生成 JWT 密钥；production profile 禁止 Flyway 自动基线，新数据库必须执行完整版本迁移。
 - **可观测部署健康**：Actuator 只公开 `/actuator/health`，Docker 和 Render 使用同一路径检查应用与数据库就绪状态，业务 API 的 JWT 边界保持不变。
 - **持续集成**：GitHub Actions 先并行运行后端快速测试 / Testcontainers PostgreSQL 集成测试和前端 Vitest / TypeScript 检查 / 生产构建，再构建实际部署镜像并用 Playwright 验证桌面、移动端及跨浏览器真实链路；保留三类测试报告和失败诊断。
 - **精确表示营养数值**：重量和营养数据使用 `BigDecimal`，减少浮点误差。
@@ -112,7 +114,7 @@ Java 21 + Spring Boot 单体后端
 ## 当前质量基线
 
 - `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 12 个 Playwright 执行项；2026-10-19 [登录失败限流 GitHub CI](https://github.com/kekevot233/fitpilot/actions/runs/39187897581)（提交 `df861d7`）三个任务全部通过，三类测试报告均已上传。
-- 后端测试：99 个快速单元 / MVC 测试通过；8 个 Testcontainers 集成测试通过（3 个 PostgreSQL、5 个 Redis），覆盖业务数据库、登录并发额度、共享失败计数、隔离和过期恢复；2026-10-19 在本机 Docker 环境验证。
+- 后端测试：104 个快速单元 / MVC 测试、12 个 Testcontainers 集成测试通过（4 个 PostgreSQL 场景、8 个独立 Redis 场景），覆盖迁移、用户隔离、登录限流、搜索缓存命中/过期/并发容量和故障回退；2026-10-19 在本机 Docker 环境验证。本轮远端 CI 待推送验证。
 - 前端测试：14 个 Vitest 测试通过，新增登录 429/503 倒计时、恢复提交及账号切换；TypeScript 检查和 Vite 生产构建通过。Playwright 有 4 个场景，新增真实连续失败限流与伪造转发头不能绕过，在三个浏览器/视口共 12 个执行项。
 - 本轮浏览器验证：本机桌面和手机 Chromium 共 8 项通过，GitHub Ubuntu CI 在生产镜像、PostgreSQL 和 Redis 上验证包含 Firefox 的 12 项全部通过；覆盖原有饮食、体重流程，以及登录限流倒计时、账号隔离和伪造转发头。
 - npm 依赖审计：0 个已知漏洞。
@@ -131,6 +133,7 @@ Java 21 + Spring Boot 单体后端
 - 默认配置为兼容开发早期数据库仍启用 Flyway `baseline-on-migrate`；production profile 已明确关闭自动基线。后续确认所有本地旧库都被 Flyway 接管后，可从默认配置移除兼容开关。
 - 当前受 Spring Boot 管理的 Flyway 10.20.1 在 PostgreSQL 18.6 上运行成功，但会提示官方测试范围到 PostgreSQL 17，后续依赖升级需要再次验证。
 - JWT 保存在浏览器本地存储中，尚未实现 refresh token、主动注销失效和更完善的生产安全策略。
+- 内置食物搜索缓存最多延迟一个 TTL 反映食物库更新，可单独删除缓存 Hash 即时刷新；并发冷查询可能重复回源，尚无缓存命中率指标或性能压测，不宣称量化提速效果。
 - CI 已覆盖后端、数据库迁移、前端测试 / 构建、生产镜像，以及 Chromium、Firefox 和手机视口真实链路；Render Blueprint 已就绪，但仍未接入自动部署或 WebKit。
 - 浏览器自动化已覆盖注册、错误密码和核心饮食流程，但尚未覆盖接口超时/重试、WebKit、视觉回归和无障碍检查；也尚无线上监控和公开演示环境。
 - AI 营养估算是可选辅助能力，结果受菜品做法和模型输出影响，不能视为权威营养数据。
@@ -143,7 +146,8 @@ Java 21 + Spring Boot 单体后端
 2. 将已验证的生产镜像增加受控自动部署步骤，确保只在测试全部通过后发布。
 3. 扩展 Playwright 的接口超时/重试、WebKit、视觉回归和无障碍检查。
 4. 改进认证安全，包括更合理的 token 生命周期、refresh token 与注销策略。
-5. 稳定饮食 MVP 后，再继续训练模块或拍照识别。
+5. 为 Redis 增加缓存命中率、回源和故障观测，以实际访问量决定后续优化。
+6. 稳定饮食 MVP 后，再继续训练模块或拍照识别。
 
 ## 作品集价值
 

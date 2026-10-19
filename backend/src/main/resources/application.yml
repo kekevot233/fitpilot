@@ -51,6 +51,10 @@ springdoc:
     tags-sorter: alpha
 
 fitpilot:
+  cache:
+    food-search:
+      enabled: ${FOOD_CACHE_ENABLED:true}
+      ttl-seconds: ${FOOD_CACHE_TTL_SECONDS:300}
   ai:
     # OpenAI-compatible Chat Completions API. Keep the key in an environment variable.
     base-url: ${AI_BASE_URL:https://api.deepseek.com}

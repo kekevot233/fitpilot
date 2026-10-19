@@ -2,6 +2,9 @@ package com.fitpilot.integration;
 
 import com.fitpilot.domain.MealType;
 import com.fitpilot.dto.food.RecentFoodResponse;
+import com.fitpilot.dto.food.CreateFoodRequest;
+import com.fitpilot.dto.food.FoodResponse;
+import com.fitpilot.service.BuiltInFoodSearchCache;
 import com.fitpilot.service.FoodService;
 import com.fitpilot.service.FoodLogService;
 import com.fitpilot.service.WeightLogService;
@@ -16,6 +19,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.testcontainers.containers.GenericContainer;
 
 import java.util.List;
 import java.time.LocalDate;
@@ -38,6 +45,14 @@ class DatabaseMigrationIT {
     @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
+    @Container
+    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7.4-alpine").withExposedPorts(6379);
+
+    @DynamicPropertySource
+    static void redisProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.data.redis.url", () -> "redis://" + REDIS.getHost() + ":" + REDIS.getMappedPort(6379));
+    }
+
     @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
@@ -46,6 +61,37 @@ class DatabaseMigrationIT {
     private FoodLogService foodLogService;
     @Autowired
     private WeightLogService weightLogService;
+    @Autowired
+    private StringRedisTemplate redis;
+
+    @Test
+    @Transactional
+    void sharedBuiltInCacheKeepsCustomFoodsPrivateAndReflectsUpdatesImmediately() {
+        redis.delete(BuiltInFoodSearchCache.KEY);
+        Long firstUser = insertWeightUser("cache-first@example.com");
+        Long secondUser = insertWeightUser("cache-second@example.com");
+        var request = new CreateFoodRequest("我的缓存测试米饭", new BigDecimal("150"),
+                new BigDecimal("4"), new BigDecimal("25"), new BigDecimal("3"));
+        var created = foodService.create(firstUser, request);
+
+        assertThat(foodService.findAll(firstUser, " 米饭 ")).extracting(FoodResponse::name)
+                .contains("熟米饭", request.name());
+        assertThat(foodService.findAll(secondUser, "米饭")).extracting(FoodResponse::name)
+                .contains("熟米饭").doesNotContain(request.name());
+        var edited = new CreateFoodRequest("我的新缓存测试米饭", new BigDecimal("160"),
+                request.proteinPer100g(), request.carbsPer100g(), request.fatPer100g());
+        foodService.updateCustomFood(firstUser, created.id(), edited);
+        assertThat(foodService.findAll(firstUser, "米饭")).extracting(FoodResponse::name)
+                .contains(edited.name()).doesNotContain(request.name());
+        foodService.archiveCustomFood(firstUser, created.id());
+        assertThat(foodService.findAll(firstUser, "米饭")).extracting(FoodResponse::name)
+                .doesNotContain(request.name(), edited.name());
+        assertThat(foodService.findAll(secondUser, "%米饭")).extracting(FoodResponse::name)
+                .contains("熟米饭").doesNotContain(request.name(), edited.name());
+        assertThat(redis.opsForHash().size(BuiltInFoodSearchCache.KEY)).isPositive();
+        assertThat(redis.opsForHash().values(BuiltInFoodSearchCache.KEY))
+                .allSatisfy(json -> assertThat(json.toString()).doesNotContain("我的"));
+    }
 
     @Test
     void buildsAValidatedApplicationSchemaFromAnEmptyDatabase() {

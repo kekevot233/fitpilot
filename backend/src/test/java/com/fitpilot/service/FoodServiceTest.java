@@ -45,6 +45,8 @@ class FoodServiceTest {
     private FoodLogRepository foodLogRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private BuiltInFoodSearchCache builtInFoodSearchCache;
     @Spy
     private FoodNutritionCalculator foodNutritionCalculator = new FoodNutritionCalculator();
     @InjectMocks
@@ -78,13 +80,16 @@ class FoodServiceTest {
     void returnsOnlyBuiltInAndCurrentUsersCustomFoodsFromRepository() {
         Food rice = food("熟米饭", 116);
         Food ownMeal = food("我的鸡胸饭", 155);
-        when(foodRepository.findVisibleToUser(7L, "鸡")).thenReturn(List.of(ownMeal, rice));
+        when(builtInFoodSearchCache.search("鸡")).thenReturn(List.of(new FoodResponse(
+                rice.getId(), rice.getName(), rice.getCaloriesPer100g(), rice.getProteinPer100g(),
+                rice.getCarbsPer100g(), rice.getFatPer100g())));
+        when(foodRepository.findCustomByKeyword(7L, "鸡")).thenReturn(List.of(ownMeal));
 
         List<FoodResponse> response = service.findAll(7L, " 鸡 ");
 
         assertThat(response).extracting(FoodResponse::name)
                 .containsExactly("我的鸡胸饭", "熟米饭");
-        verify(foodRepository).findVisibleToUser(7L, "鸡");
+        verify(foodRepository).findCustomByKeyword(7L, "鸡");
     }
 
     @Test

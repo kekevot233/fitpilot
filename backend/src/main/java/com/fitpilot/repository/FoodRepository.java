@@ -25,6 +25,24 @@ public interface FoodRepository extends JpaRepository<Food, Long> {
 
     @Query("""
             select food from Food food
+            where food.owner is null
+              and (food.active is null or food.active = true)
+              and (:keyword = '' or lower(food.name) like lower(concat('%', :keyword, '%')))
+            order by food.name asc
+            """)
+    List<Food> findBuiltInByKeyword(@Param("keyword") String keyword);
+
+    @Query("""
+            select food from Food food
+            where food.owner.id = :userId
+              and (food.active is null or food.active = true)
+              and (:keyword = '' or lower(food.name) like lower(concat('%', :keyword, '%')))
+            order by food.name asc
+            """)
+    List<Food> findCustomByKeyword(@Param("userId") Long userId, @Param("keyword") String keyword);
+
+    @Query("""
+            select food from Food food
             where food.id = :foodId
               and (food.owner is null or food.owner.id = :userId)
               and (food.active is null or food.active = true)

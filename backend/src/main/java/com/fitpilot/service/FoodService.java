@@ -18,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.context.annotation.Profile;
 
 import java.util.List;
+import java.util.Comparator;
+import java.util.stream.Stream;
 
 @Service
 @Profile("!no-db")
@@ -27,15 +29,18 @@ public class FoodService {
     private final FoodLogRepository foodLogRepository;
     private final UserRepository userRepository;
     private final FoodNutritionCalculator foodNutritionCalculator;
+    private final BuiltInFoodSearchCache builtInFoodSearchCache;
 
     public FoodService(FoodRepository foodRepository,
                        FoodLogRepository foodLogRepository,
                        UserRepository userRepository,
-                       FoodNutritionCalculator foodNutritionCalculator) {
+                       FoodNutritionCalculator foodNutritionCalculator,
+                       BuiltInFoodSearchCache builtInFoodSearchCache) {
         this.foodRepository = foodRepository;
         this.foodLogRepository = foodLogRepository;
         this.userRepository = userRepository;
         this.foodNutritionCalculator = foodNutritionCalculator;
+        this.builtInFoodSearchCache = builtInFoodSearchCache;
     }
 
     @Transactional
@@ -64,10 +69,10 @@ public class FoodService {
     @Transactional(readOnly = true)
     public List<FoodResponse> findAll(long userId, String keyword) {
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
-        List<Food> foods = foodRepository.findVisibleToUser(userId, normalizedKeyword);
-
-        return foods.stream()
-                .map(this::toResponse)
+        List<FoodResponse> builtIn = builtInFoodSearchCache.search(normalizedKeyword);
+        var custom = foodRepository.findCustomByKeyword(userId, normalizedKeyword).stream().map(this::toResponse);
+        return Stream.concat(builtIn.stream(), custom)
+                .sorted(Comparator.comparing(FoodResponse::name).thenComparingLong(FoodResponse::id))
                 .toList();
     }
 
