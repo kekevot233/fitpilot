@@ -36,6 +36,13 @@ export function clearAccessToken() {
   window.localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly retryAfterSeconds = 0) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getAccessToken()
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -50,7 +57,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!response.ok) {
     const problem = await response.json().catch(() => null)
     const message = problem?.detail ?? `请求失败（${response.status}）`
-    throw new Error(message)
+    const retry = Number(response.headers.get('Retry-After') ?? problem?.retryAfterSeconds ?? 0)
+    throw new ApiError(message, response.status, Number.isFinite(retry) ? Math.max(0, retry) : 0)
   }
 
   if (response.status === 204) {

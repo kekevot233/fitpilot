@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
+import com.fitpilot.service.LoginClientAddress;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,10 +29,12 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserAccessGuard userAccessGuard;
+    private final LoginClientAddress clientAddress;
 
-    public AuthController(AuthService authService, UserAccessGuard userAccessGuard) {
+    public AuthController(AuthService authService, UserAccessGuard userAccessGuard, LoginClientAddress clientAddress) {
         this.authService = authService;
         this.userAccessGuard = userAccessGuard;
+        this.clientAddress = clientAddress;
     }
 
     @PostMapping("/register")
@@ -42,8 +46,8 @@ public class AuthController {
 
     @PostMapping("/login")
     @Operation(summary = "邮箱密码登录")
-    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request);
+    public AuthResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        return authService.login(request, clientAddress.resolve(httpRequest));
     }
 
     @GetMapping("/me")

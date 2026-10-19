@@ -6,6 +6,8 @@ FitPilot 是一个面向健身新手和日常健身用户的饮食与训练规�
 
 支持补录历史饮食与体重。尚未建立营养目标的日期也能记录实际摄入，页面会明确显示“当天无目标”；体重卡片可单独选择日期，通过明细编辑已有记录或确认删除误录，趋势随之更新。注册与身体资料编辑只需选择活动水平，无需重复填写训练次数。
 
+登录使用 Redis 保护：同一账号与来源默认 15 分钟内连续失败 5 次进入冷却，页面显示重试倒计时。Redis 暂时不可用时新登录返回可重试提示，已登录的饮食和体重操作仍可使用。
+
 ## Repository layout
 
 ```text
@@ -28,7 +30,7 @@ cd D:\code\fitapp
 docker compose up --build
 ```
 
-首次构建需要下载 Java、Node、Nginx 和 PostgreSQL 镜像。三个服务健康后访问：
+首次构建需要下载 Java、Node、Nginx、PostgreSQL 和 Redis 镜像。四个服务健康后访问：
 
 - 网页端：`http://localhost:5173`
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
@@ -43,6 +45,8 @@ docker compose down
 
 PostgreSQL 数据保存在 Docker 命名卷中，普通 `down` 后仍会保留，而且与电脑上原有的 PostgreSQL 数据库完全隔离。只有明确想清空容器数据库时才使用 `docker compose down --volumes`。
 
+Redis 也使用独立数据卷保存限流状态，不开放宿主机端口。`LOGIN_MAX_FAILURES` 与 `LOGIN_WINDOW_SECONDS` 可调整规则。直接用 Maven 启动后端时需配置可达的 `REDIS_URL`；通过反向代理部署时，仅将实际代理加入 `LOGIN_TRUSTED_PROXIES`。Render Blueprint 已包含私网 Key Value，免费实例的计数可能在重启后丢失。
+
 ## Production deployment topology
 
 公开演示环境使用根目录 `Dockerfile`：先构建 React，再把静态文件打进 Spring Boot JAR，由一个非 root Java 容器同时提供网页和同源 `/api`。这减少了托管环境中的服务数量，也不需要为浏览器配置跨域地址。`/actuator/health` 是公开健康端点，其余业务 API 继续要求 JWT。
@@ -54,7 +58,7 @@ $env:WEB_PORT = "5174"
 docker compose -f compose.deploy.yaml up --build --wait
 ```
 
-访问 `http://localhost:5174`，停止并删除这套临时环境可运行 `docker compose -f compose.deploy.yaml down --volumes`。它与上面的日常三容器开发环境互不共用数据库卷。
+访问 `http://localhost:5174`，停止并删除这套临时环境可运行 `docker compose -f compose.deploy.yaml down --volumes`。它与上面的日常四容器开发环境互不共用 PostgreSQL 和 Redis 数据卷。
 
 根目录 `render.yaml` 可在 Render 中创建一个 Docker Web Service 和一个仅允许私网连接的 PostgreSQL 17 数据库。Blueprint 会生成 JWT 密钥，并通过 Render 的 `connectionString` 注入数据库连接；可选的 `AI_API_KEY` 需要部署后在 Dashboard 中另行配置。当前仓库已经具备部署配置，但尚未创建公开线上实例；正式保存真实用户数据前仍需确定数据库备份与恢复策略。配置格式依据 [Render Blueprint 官方规范](https://render.com/docs/blueprint-spec)。
 

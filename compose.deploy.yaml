@@ -1,6 +1,16 @@
 name: fitpilot-deploy
 
 services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   postgres:
     image: postgres:17-alpine
     environment:
@@ -21,6 +31,10 @@ services:
       dockerfile: Dockerfile
     environment:
       SPRING_PROFILES_ACTIVE: production
+      REDIS_URL: redis://redis:6379
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
+      LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-900}
+      LOGIN_TRUSTED_PROXIES: ${LOGIN_TRUSTED_PROXIES:-}
       DATABASE_URL: postgresql://fitpilot:${FITPILOT_DB_PASSWORD:-fitpilot}@postgres:5432/fitpilot
       DB_NAME: fitpilot
       DB_USERNAME: fitpilot
@@ -33,10 +47,13 @@ services:
       AI_MODEL: ${AI_MODEL:-deepseek-chat}
       AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-25}
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     ports:
       - "${WEB_PORT:-5173}:8080"
 
 volumes:
+  redis-data:
   postgres-data:

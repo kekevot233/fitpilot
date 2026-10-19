@@ -6,6 +6,11 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/fitpilot}
     username: ${DB_USERNAME:fitpilot}
     password: ${DB_PASSWORD:fitpilot}
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+      connect-timeout: 1s
+      timeout: 2s
   jpa:
     hibernate:
       # Flyway owns schema changes; Hibernate only checks that entities still match the database.
@@ -19,11 +24,16 @@ spring:
     baseline-description: Hibernate schema before Flyway
 
 server:
+  forward-headers-strategy: none
   # Render and similar platforms provide PORT. SERVER_PORT remains available
   # for local or self-hosted overrides.
   port: ${PORT:${SERVER_PORT:8080}}
 
 management:
+  health:
+    redis:
+      # Redis failure blocks new logins, not existing users' core data access.
+      enabled: false
   endpoints:
     web:
       exposure:
@@ -48,6 +58,11 @@ fitpilot:
     model: ${AI_MODEL:deepseek-chat}
     timeout-seconds: ${AI_TIMEOUT_SECONDS:25}
   security:
+    login-protection:
+      max-failures: ${LOGIN_MAX_FAILURES:5}
+      window-seconds: ${LOGIN_WINDOW_SECONDS:900}
+      attempt-lease-seconds: ${LOGIN_ATTEMPT_LEASE_SECONDS:30}
+      trusted-proxies: ${LOGIN_TRUSTED_PROXIES:}
     jwt:
       issuer: ${JWT_ISSUER:https://fitpilot.local}
       secret: ${JWT_SECRET:fitpilot-local-development-secret-change-before-production-2026}

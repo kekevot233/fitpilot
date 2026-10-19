@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('错误密码不会登录或保存 access token', async ({ page }, testInfo) => {
   await page.goto('/')
-  await page.getByLabel('邮箱').fill(`missing-${testInfo.project.name}@local.test`)
+  await page.getByLabel('邮箱').fill(`missing-${testInfo.project.name}-${Date.now()}@local.test`)
   await page.getByLabel('密码').fill('WrongPassword123')
 
   const loginResponsePromise = page.waitForResponse((response) =>

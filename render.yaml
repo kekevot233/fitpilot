@@ -1,6 +1,11 @@
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
 
 services:
+  - type: keyvalue
+    name: fitpilot-login-redis
+    plan: free
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
   - type: web
     name: fitpilot-demo-zhengyi
     runtime: docker
@@ -11,6 +16,11 @@ services:
     envVars:
       - key: SPRING_PROFILES_ACTIVE
         value: production
+      - key: REDIS_URL
+        fromService:
+          name: fitpilot-login-redis
+          type: keyvalue
+          property: connectionString
       - key: DATABASE_URL
         fromDatabase:
           name: fitpilot-db

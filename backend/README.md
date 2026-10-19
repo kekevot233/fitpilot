@@ -145,6 +145,23 @@ $headers = @{ Authorization = "Bearer $($auth.accessToken)" }
 
 Protected requests in the following examples must include `-Headers $headers`. The backend reads the `userId` from the signed token and rejects access to a different user's records with HTTP `403`.
 
+## Login failure protection
+
+Login requires Redis (`REDIS_URL`, default `redis://localhost:6379`). Compose supplies a private Redis service. The default policy allows five failed attempts per normalized email and source in a 900-second window; the fifth failure and subsequent attempts return `429` with `Retry-After` and `retryAfterSeconds`. A successful login clears that bucket. Missing accounts follow the same failure policy.
+
+For a backend run directly with Maven, a local-only Redis instance can be started with:
+
+```powershell
+docker run --detach --rm --name fitpilot-dev-redis -p 127.0.0.1:6379:6379 redis:7.4-alpine
+$env:REDIS_URL = "redis://localhost:6379"
+```
+
+Redis Lua scripts reserve capacity before checking passwords, so parallel requests across backend instances cannot bypass the failure budget. In-flight requests temporarily occupy capacity and have a 30-second lease to recover from crashed requests. Busy capacity returns a one-second retry; failure windows expire from the first failure without being extended by retries.
+
+Only configured `LOGIN_TRUSTED_PROXIES` may supply forwarded source addresses; otherwise the TCP peer is used. Development Compose trusts only its `web` service, whose Nginx replaces forwarding headers. Direct public deployments should configure only their actual proxy chain. Redis keys contain a SHA-256 bucket digest and random reservation IDs, not raw email, IP, password or JWT values.
+
+`LOGIN_MAX_FAILURES`, `LOGIN_WINDOW_SECONDS` and `LOGIN_ATTEMPT_LEASE_SECONDS` configure the policy. When Redis cannot enforce protection, login returns a safe `503` with a five-second retry. Existing authenticated data operations continue, and core health intentionally excludes Redis. Redis state loss resets throttles: Compose persists AOF data, while the example free Render Key Value instance is not durable across restarts.
+
 ## Read a dashboard profile
 
 ```powershell

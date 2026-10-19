@@ -23,15 +23,17 @@ public class AuthService {
     private final UserProfileService userProfileService;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
+    private final LoginRateLimiter loginRateLimiter;
 
     public AuthService(UserRepository userRepository,
                        UserProfileService userProfileService,
                        PasswordEncoder passwordEncoder,
-                       TokenService tokenService) {
+                       TokenService tokenService, LoginRateLimiter loginRateLimiter) {
         this.userRepository = userRepository;
         this.userProfileService = userProfileService;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     @Transactional
@@ -54,13 +56,23 @@ public class AuthService {
     }
 
     @Transactional(readOnly = true)
-    public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
-                .orElseThrow(this::invalidCredentials);
-        if (user.getPasswordHash() == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw invalidCredentials();
+    public AuthResponse login(LoginRequest request, String source) {
+        String email = normalizeEmail(request.email());
+        LoginRateLimiter.Permit permit = loginRateLimiter.acquire(email, source);
+        User user;
+        try {
+            user = userRepository.findByEmailIgnoreCase(email).orElseThrow(this::invalidCredentials);
+            if (user.getPasswordHash() == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+                throw invalidCredentials();
+            }
+        } catch (InvalidCredentialsException exception) {
+            loginRateLimiter.failed(permit);
+            throw exception;
+        } catch (RuntimeException exception) {
+            loginRateLimiter.cancel(permit);
+            throw exception;
         }
-
+        loginRateLimiter.succeeded(permit);
         return response(user, userProfileService.getProfile(user.getId()));
     }
 

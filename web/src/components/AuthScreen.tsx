@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { login, register, saveAccessToken } from '../api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { ApiError, login, register, saveAccessToken } from '../api'
 import type { ActivityLevel, AuthResponse, Gender, Goal } from '../types'
 
 type Props = {
@@ -36,6 +36,23 @@ export function AuthScreen({ onAuthenticated }: Props) {
   const [registerForm, setRegisterForm] = useState(initialRegisterForm)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
+  const [retryAt, setRetryAt] = useState(0)
+  const [blockedEmail, setBlockedEmail] = useState('')
+  const [now, setNow] = useState(Date.now())
+  const retrySeconds = Math.max(0, Math.ceil((retryAt - now) / 1000))
+  const loginCooling = loginForm.email.trim().toLowerCase() === blockedEmail && retrySeconds > 0
+
+  useEffect(() => {
+    if (!retryAt) return
+    const timer = window.setInterval(() => {
+      setNow(Date.now())
+      if (Date.now() >= retryAt) {
+        window.clearInterval(timer)
+        setRetryAt(0)
+      }
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [retryAt])
 
   function updateRegister<Key extends keyof RegisterForm>(key: Key, value: RegisterForm[Key]) {
     setRegisterForm((current) => ({ ...current, [key]: value }))
@@ -43,6 +60,7 @@ export function AuthScreen({ onAuthenticated }: Props) {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    if (working || (mode === 'login' && loginCooling && retryAt > Date.now())) return
     setWorking(true)
     setError('')
     try {
@@ -63,6 +81,12 @@ export function AuthScreen({ onAuthenticated }: Props) {
       onAuthenticated(auth)
     } catch (requestError) {
       setError((requestError as Error).message)
+      if (mode === 'login' && requestError instanceof ApiError && (requestError.status === 429 || requestError.status === 503)) {
+        const receivedAt = Date.now()
+        setNow(receivedAt)
+        setRetryAt(receivedAt + Math.max(1, requestError.retryAfterSeconds || 5) * 1000)
+        setBlockedEmail(loginForm.email.trim().toLowerCase())
+      }
     } finally {
       setWorking(false)
     }
@@ -181,9 +205,10 @@ export function AuthScreen({ onAuthenticated }: Props) {
             </>
           )}
 
-          {error && <p className="form-error">{error}</p>}
-          <button className="primary-button auth-submit" disabled={working} type="submit">
-            {working ? '请稍候…' : mode === 'login' ? '登录 FitPilot' : '创建账户并计算目标'}
+          {error && <p className="form-error" role="alert">{error}</p>}
+          {mode === 'login' && loginCooling && <p role="status">请在 {retrySeconds} 秒后重试。</p>}
+          <button className="primary-button auth-submit" disabled={working || (mode === 'login' && loginCooling)} type="submit">
+            {working ? '请稍候…' : mode === 'login' ? loginCooling ? `${retrySeconds} 秒后重试` : '登录 FitPilot' : '创建账户并计算目标'}
           </button>
         </form>
       </section>

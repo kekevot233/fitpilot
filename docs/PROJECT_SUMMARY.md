@@ -1,7 +1,7 @@
 # FitPilot Project Summary
 
 > 项目状态：网页端饮食记录 MVP 持续开发中  
-> 最后更新：2026-10-17
+> 最后更新：2026-10-19
 
 ## 一句话介绍
 
@@ -37,6 +37,7 @@ FitPilot 是一个面向健身新手、大学生和日常健身用户的饮食�
 ### 账户与营养计划
 
 - JWT 注册、登录和接口鉴权；后端根据登录身份访问用户数据。
+- Redis 登录失败限流：账号与来源分别计数，默认 15 分钟内失败 5 次进入冷却；支持多实例、429 重试倒计时及可信代理来源识别。
 - 用户身体资料保存与修改。
 - 营养设置只填写活动水平，注册及资料编辑无需重复填写每周训练次数。
 - 使用 Mifflin–St Jeor 公式计算 BMR 和 TDEE。
@@ -82,11 +83,13 @@ Java 21 + Spring Boot 单体后端
 - 后端：Java 21、Maven、Spring Boot 3.4.5、Spring Web、Validation、Spring Data JPA、Spring Security、Actuator、Flyway、springdoc-openapi。
 - 前端：React、TypeScript、Vite。
 - 数据库：PostgreSQL。
+- 中间件：Redis，用于登录失败计数和并发预留；业务数据继续存于 PostgreSQL。
 - 架构选择：MVP 阶段使用结构清晰的单体应用，不提前引入微服务、消息队列或复杂 Agent 编排。
 
 ## 关键工程设计
 
 - **登录身份作为数据边界**：受保护接口从 JWT 获取当前用户，避免客户端通过伪造 `userId` 访问别人的数据。
+- **共享登录保护**：Redis Lua 原子处理失败计数、并发额度和过期；键使用账号/来源摘要，转发地址仅接受可信代理，Redis 故障时暂停登录而不影响已登录用户的数据操作。
 - **营养目标保留历史版本**：目标带有 `effectiveDate`，Dashboard 按日期选择当时有效的目标。
 - **无目标日期仍可记录事实**：历史 Dashboard 的目标与剩余量允许为空，实际摄入独立存在；趋势的目标与差值只比较有目标且有记录的日期。
 - **饮食记录保存事实快照**：`food_logs` 同时保存录入时的食物名称和营养值；`foods` 可以继续作为可修改模板，历史 Dashboard 与趋势不会被回写。
@@ -108,12 +111,12 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 9 个 Playwright 执行项；2026-10-17 [体重记录管理 GitHub CI](https://github.com/kekevot233/fitpilot/actions/runs/39019935648)（提交 `7f54779`）三个任务全部通过，并生成三类测试报告。
-- 后端测试：85 个快速单元 / MVC 测试通过；3 个 PostgreSQL Testcontainers 集成测试通过，覆盖空库迁移、最近份量查询、历史摄入及体重删除后的用户隔离与均值重算；2026-10-17 在本机 Docker 环境验证。
-- 前端测试：11 个 Vitest 测试通过，覆盖饮食与体重流程、日期导航、历史补录、体重编辑/删除/取消/失败重试和日期切换时的旧请求保护；TypeScript 检查和 Vite 生产构建通过。Playwright 保留注册、错误登录和核心饮食 3 个场景，注册场景扩展体重明细编辑、确认删除及刷新后持久化。
-- 本轮浏览器验证：本机桌面和手机 Chromium 共 6 项通过；GitHub Ubuntu CI 在实际单服务生产镜像上确认包含 Firefox 的 9 项全部通过，覆盖体重明细编辑、取消/确认删除、刷新后持久化与手机页面宽度。
+- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 12 个 Playwright 执行项；本轮完整 CI 待推送后验证。此前 2026-10-17 [体重记录管理 GitHub CI](https://github.com/kekevot233/fitpilot/actions/runs/39019935648)（提交 `7f54779`）三个任务全部通过。
+- 后端测试：99 个快速单元 / MVC 测试通过；8 个 Testcontainers 集成测试通过（3 个 PostgreSQL、5 个 Redis），覆盖业务数据库、登录并发额度、共享失败计数、隔离和过期恢复；2026-10-19 在本机 Docker 环境验证。
+- 前端测试：14 个 Vitest 测试通过，新增登录 429/503 倒计时、恢复提交及账号切换；TypeScript 检查和 Vite 生产构建通过。Playwright 有 4 个场景，新增真实连续失败限流与伪造转发头不能绕过，在三个浏览器/视口共 12 个执行项。
+- 本轮浏览器验证：本机桌面和手机 Chromium 共 8 项通过，覆盖原有饮食、体重流程，以及登录限流倒计时、账号隔离和伪造转发头；包含 Firefox 的 12 项待 GitHub Ubuntu CI 验证。
 - npm 依赖审计：0 个已知漏洞。
-- Docker Compose 三容器开发环境联合验收通过：PostgreSQL、Spring Boot、Nginx/React 均为 healthy；网页与 Swagger 可从宿主机访问。
+- Docker Compose 四容器开发环境联合验收通过：PostgreSQL、Redis、Spring Boot、Nginx/React 均为 healthy；原 PostgreSQL 数据卷保留。
 - 单服务生产镜像联合验收通过：production profile 使用 Render 风格 `connectionString` 连接独立 PostgreSQL，健康、首页、静态资源与 OpenAPI 返回成功，未登录业务 API 返回 401；桌面和手机 Chromium 6 项通过。
 - 从全新容器数据库启动时，Flyway 自动完成 V1 → V2 → V3，初始化 85 个食物；真实链路已验证“登录 → 搜索熟米饭 → 记录 200g → Dashboard 显示 260 kcal → 切换减脂计划并重算目标”。
 - 后端能够连接真实 PostgreSQL 启动；现有数据库 V3 基线接管，以及 Docker 临时空库从 V1 到 V3 的完整迁移均已验证。

@@ -2,7 +2,7 @@
 
 > 工作目录：`D:\code\fitapp`  
 > 当前阶段：网页端饮食记录 MVP；后端 Spring Boot + PostgreSQL；前端 React + Vite。  
-> 最后更新：2026-10-17
+> 最后更新：2026-10-19
 
 ## 文档维护规则
 
@@ -146,6 +146,18 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 前端组件：`web/src/components/BodyProfilePanel.tsx`。
 - 验证：前端 `npm run build` 成功；后端 `mvn -o test` 共 49 项通过。
 
+## Redis 登录失败限流（2026-10-19）
+
+- 登录按规范化邮箱与来源地址的 SHA-256 摘要分桶，不在 Redis 键中保存明文邮箱、地址、密码或 JWT。默认 15 分钟窗口内最多 5 次失败：前 4 次错误凭据返回 401，第 5 次返回 429；窗口内继续尝试（包括正确密码）仍为 429，成功登录会清除该桶失败计数。未知账号采用相同规则和错误文案。
+- `LoginRateLimiter` 用两个 Lua 脚本原子预留/完成请求。失败计数窗口从第一次失败开始，不会因反复重试延长。正在校验的请求也暂占额度，避免多个实例并发绕过；额度忙时返回 1 秒重试，预留默认 30 秒后失效，进程异常不会永久占用。脚本用 Redis 时钟；两个键共享哈希标签，支持跨实例共享。
+- 配置：`REDIS_URL`、`LOGIN_MAX_FAILURES`（5）、`LOGIN_WINDOW_SECONDS`（900）、`LOGIN_ATTEMPT_LEASE_SECONDS`（30）、`LOGIN_TRUSTED_PROXIES`（默认空）。非正常业务错误只释放预留，不累计密码失败。
+- `LoginClientAddress` 默认使用真实连接地址，忽略用户提供的转发头；只有已配置的可信代理可提供 `X-Forwarded-For`，从右向左解析到首个不可信来源。支持明确代理 IP/CIDR 或受控 Docker 服务名；本地 Compose 只信任 `web`，Nginx 覆盖转发来源并移除 `Forwarded`。后端禁用框架自动转发地址重写。生产代理须按实际链路配置，不使用任意来源通配信任。
+- 429 同时返回 `Retry-After` 秒数和 Problem Detail 的 `retryAfterSeconds`。Redis 失败或返回异常空值时不绕过限流，登录返回不含连接详情的 503 + 5 秒重试；已登录数据 API 不依赖 Redis，核心健康检查不因 Redis 失效而下线。
+- 网页按服务端重试时间显示倒计时并禁用该账号重复提交，到期恢复；其他账号及注册不受本账号倒计时影响。页面重新加载后仍由后端强制限流。
+- 两套 Compose 都增加私网 Redis 7.4、健康依赖、AOF 数据卷与 `noeviction` 策略；无需迁移 PostgreSQL。Render Blueprint 增加私网 Key Value 并自动注入 `REDIS_URL`，free 示例重启可能丢计数，正式部署需评估持久化套餐。Redis 不发布宿主机端口；Maven 直跑需另外提供可达的 Redis URL。
+- 测试覆盖原子并发预留、跨客户端共享、桶隔离、成功清理、失败窗口与崩溃预留过期、可信代理/伪造头、429/503 契约、前端倒计时。Playwright 新增真实失败 5 次触发限流及伪造转发头不能绕过的场景。
+- 本地验证：99 个后端单元/MVC 测试、8 个 Testcontainers 测试（PostgreSQL 3、Redis 5）、14 个 Vitest 及生产构建通过；桌面/手机 Chromium 共 8 项通过。开发 Compose 四服务均 healthy，保留原 PostgreSQL 数据卷。
+
 ## 体重明细与误录删除（2026-10-17）
 
 - 体重卡片新增默认收起的“体重记录明细”，复用当前 30 天趋势的 `points`，按日期倒序显示并注明区间。点击编辑会选择该日期并带入原体重；“回到今天”恢复今天的录入入口，不改变饮食日期。
@@ -255,13 +267,13 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 空数据库迁移验证已经固化为自动化测试，不再依赖人工创建临时 schema。
 
 - 测试文件：`backend/src/test/java/com/fitpilot/integration/DatabaseMigrationIT.java`。
-- `mvn test` 继续只运行 85 个快速单元 / MVC 测试，不要求 Docker。
+- `mvn test` 继续只运行 99 个快速单元 / MVC 测试，不要求 Docker 或 Redis。
 - `mvn -Pintegration-tests verify` 先运行快速测试，再由 Maven Failsafe 执行 `*IT` 集成测试。
 - Testcontainers 启动临时 `postgres:17-alpine`，Spring Boot 的 `@ServiceConnection` 自动注入 JDBC 连接；测试结束后 Ryuk 自动清理容器。
 - 集成测试关闭 Flyway 自动基线，从真正的空库执行 V1 → V2 → V3，并让 Hibernate `validate` 检查实体映射。
 - 断言内容：迁移版本必须恰好为 1、2、3；必须存在 9 张业务表；`food_logs` 五个营养快照字段必须为 `NOT NULL`；默认食物必须初始化为 85 个；最近食物查询必须对同一种食物只返回最新一条份量和餐次。
 - Failsafe 测试 JVM 固定 `api.version=1.40`，用于兼容 Docker Desktop 29 的最低 API 限制，只影响集成测试。
-- 集成套件现有 3 个 PostgreSQL 测试，验证空库迁移、最近份量/历史摄入及体重删除隔离/均值重算。测试数据库为 Docker 临时库，不会连接或修改本地 `fitpilot` 数据库。
+- 集成套件现有 3 个 PostgreSQL 测试，以及 `LoginRateLimiterIT` 的 5 个临时 Redis 测试。两类容器各自清理，不连接或修改本地业务数据库与限流状态。
 
 ## 最近使用食物（已实现）
 
@@ -303,7 +315,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 ## 网页核心流程测试（已实现）
 
-网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，现有十一条测试覆盖跨组件流程、趋势比较及体重记录管理。
+网页端已经接入 Vitest、Testing Library、user-event、jest-dom 和 jsdom，现有十四条测试覆盖跨组件流程、趋势比较、体重记录管理及登录重试。
 
 - 测试文件：`web/src/App.core-flow.test.tsx`。
 - 测试环境初始化：`web/src/test/setup.ts`。
@@ -317,16 +329,16 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 测试后端是内存中的确定性响应，不连接 8080 或 PostgreSQL。它验证 React 页面协作和前端 API 契约；真实 SQL/Flyway 由后端 Testcontainers 测试负责。
 - 这些测试使用内存响应，适合快速、稳定地定位 React 组件协作和 API 契约问题；真实部署链路由下一节的 Playwright 测试补足。
 - 新增依赖后发现的 `source-map-js 1.2.1` 审计问题已升级到 1.2.2；最近一次 npm 审计为 0 个已知漏洞。
-- 最近验证：`npm test` 为 11 个测试通过；`npm run build` 通过。
+- 最近验证：`npm test` 为 14 个测试通过；`npm run build` 通过。
 
 ## Playwright 真实浏览器端到端测试（已实现）
 
-- 测试文件：`web/e2e/nutrition-core-flow.spec.ts`、`web/e2e/auth-flow.spec.ts`；配置：`web/playwright.config.ts`。
-- 连接正在运行的 `http://127.0.0.1:5173`，不使用 fetch stub。本地开发 Compose 经过 Nginx、Spring Boot 和 PostgreSQL；CI 则连接把 React 静态文件打入 Spring Boot JAR 的生产镜像和 PostgreSQL。
-- 覆盖三类场景：错误密码返回 401 且不保存 token；从完整注册表单创建账户并生成轻盈增肌目标；登录后搜索熟米饭、记录 137g 午餐并切换饮食计划。
+- 测试文件：`web/e2e/nutrition-core-flow.spec.ts`、`web/e2e/auth-flow.spec.ts`、`web/e2e/login-limit.spec.ts`；配置：`web/playwright.config.ts`。
+- 连接正在运行的 `http://127.0.0.1:5173`，不使用 fetch stub。本地开发 Compose 经过 Nginx、Spring Boot、PostgreSQL 与 Redis；CI 则连接把 React 静态文件打入 Spring Boot JAR 的生产镜像、PostgreSQL 与 Redis。
+- 覆盖四类场景：错误密码返回 401 且不保存 token；从完整注册表单创建账户并生成轻盈增肌目标；登录后搜索熟米饭、记录 137g 午餐并切换饮食计划；连续失败触发 429 和倒计时，伪造转发头不能绕过限流。
 - 测试通过 API 幂等准备专用账户；`finally` 中删除本轮饮食记录，失败时也尽量避免污染后续运行。计划在减脂与维持之间交替，不额外执行“恢复”写入，因为每次计划更新都会形成一条具有业务意义的历史目标版本。
 - Playwright 与 Vitest 分工明确：`vite.config.ts` 只扫描 `src/**/*.test.ts(x)`，避免把 `e2e/*.spec.ts` 误交给 Vitest。
-- 配置包含桌面 Chromium、桌面 Firefox 和 Pixel 5 手机尺寸 Chromium；三个项目共执行 9 项测试。保持单 worker 串行，避免共享测试账户并发写入。首次运行需执行 `npx playwright install chromium firefox`。
+- 配置包含桌面 Chromium、桌面 Firefox 和 Pixel 5 手机尺寸 Chromium；三个项目共执行 12 项测试。保持单 worker 串行，避免共享测试账户并发写入。首次运行需执行 `npx playwright install chromium firefox`。
 - `playwright.config.ts` 在 CI 环境额外生成 JUnit 与 HTML 报告；本地仍使用简洁列表输出。`playwright-report/` 与 `test-results/` 已被 Git 忽略。
 - 2026-10-15 使用隔离的 `fitpilot-e2e-expanded` Compose 项目复验：三个服务均 healthy，桌面与手机 Chromium 共 6 项通过；当前 Windows/Codex 环境启动 Firefox 时被系统以 `spawn UNKNOWN` 拒绝。[https://github.com/zhengyi123452/fitpilot/actions/runs/38669167886](https://github.com/zhengyi123452/fitpilot/actions/runs/38669167886)随后在 Ubuntu runner 验证桌面 Chromium、桌面 Firefox 和手机 Chromium 共 9 项全部通过（浏览器执行 18.4 秒）。临时环境验证后已连同数据卷删除，原 `fitpilot_postgres-data` 未被使用。
 
@@ -334,10 +346,10 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 - 工作流：`.github/workflows/ci.yml`；所有分支的 push、pull request 和手动 `workflow_dispatch` 均可触发，没有按路径跳过检查。
 - 工作流包含三个 `ubuntu-24.04` 任务：后端与前端先并行，二者通过后再运行端到端任务：
-  - `Backend tests and PostgreSQL integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 85 个快速测试，Failsafe 执行 3 个 PostgreSQL `*IT` 测试并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
+  - `Backend tests and PostgreSQL/Redis integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 99 个快速测试，Failsafe 执行 8 个 `*IT` 测试（PostgreSQL 3、Redis 5）并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
   - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。
-  - `Playwright end-to-end`：安装 Chromium、Firefox 与系统依赖，执行 `docker compose -f compose.deploy.yaml up --build --detach --wait`，再运行 `npm run test:e2e`。它验证与 Render 相同的单服务生产镜像和 PostgreSQL；无论成功失败都用相同 Compose 文件删除容器和临时数据卷。
-- 后端任务直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine`；E2E 任务另起完整 Compose 环境，并使用仅限该临时环境的数据库密码和 JWT secret。两者都不访问开发者数据库，也不需要仓库 secrets。
+  - `Playwright end-to-end`：安装 Chromium、Firefox 与系统依赖，执行 `docker compose -f compose.deploy.yaml up --build --detach --wait`，再运行 `npm run test:e2e`。它验证与 Render 相同的单服务生产镜像、PostgreSQL 与 Redis；无论成功失败都用相同 Compose 文件删除容器和临时数据卷。
+- 后端任务直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine` 和 `redis:7.4-alpine`；E2E 任务另起生产镜像、PostgreSQL 与 Redis Compose 环境，使用专用数据库密码和 JWT secret。两者都不访问开发者数据库，也不需要仓库 secrets。
 - Maven 缓存按 `backend/pom.xml`、npm 缓存按 `web/package-lock.json` 配置；`npm ci` 严格使用锁文件，不缓存 `node_modules`。
 - 工作流只授予 `contents: read`，checkout 不保留凭据；官方 Actions 固定到完整 commit SHA。后端超时 20 分钟、前端超时 10 分钟、E2E 超时 25 分钟；同一分支或 PR 的新运行会取消旧运行。
 - 未取消的运行会上传 `backend-test-reports`（Surefire/Failsafe）、`frontend-test-reports`（Vitest JUnit）和 `playwright-report`（JUnit、HTML、截图/trace）。E2E 失败时还会收集 Compose 状态和日志；报告保留 14 天。
@@ -368,7 +380,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 根目录新增了可复现环境：
 
-- `compose.yaml`：编排 `postgres`、`backend`、`web` 三个服务；
+- `compose.yaml`：编排 `postgres`、`redis`、`backend`、`web` 四个服务；
 - `backend/Dockerfile`：先用 Maven + Java 21 构建，再用非 root 用户运行 JRE 镜像；
 - `web/Dockerfile`：先用 Node 构建，再由 Nginx 提供静态文件；
 - `web/nginx.conf`：SPA 路由回退，并把 `/api/**` 代理到 `backend:8080`；
@@ -485,7 +497,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o test
 ```
 
-真实 PostgreSQL 集成测试（需要先启动 Docker Desktop）：
+真实 PostgreSQL / Redis 集成测试（需要先启动 Docker Desktop）：
 
 ```powershell
 cd D:\code\fitapp\backend
@@ -493,7 +505,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-当前验证（2026-10-17）：前端 `11` 个 Vitest 测试和生产构建通过；后端 `85` 个快速测试和 `3` 个 PostgreSQL Testcontainers 集成测试通过。本机开发 Compose 前后端已重建且三服务 healthy，桌面/手机 Chromium `6` 项通过。本机 Firefox 曾报启动 `spawn UNKNOWN`，GitHub Ubuntu CI 已在本次提交的生产镜像上验证包含 Firefox 的 `9` 项全部通过。完整结果见 [GitHub Actions 39019935648](https://github.com/kekevot233/fitpilot/actions/runs/39019935648)。
+当前本地验证（2026-10-19）：前端 `14` 个 Vitest 测试和生产构建通过；后端 `99` 个快速测试和 `8` 个 Testcontainers 集成测试（PostgreSQL 3、Redis 5）通过。开发 Compose 四服务均 healthy，桌面/手机 Chromium `8` 项通过。本机 Firefox 曾报启动 `spawn UNKNOWN`，本轮包含 Firefox 的 `12` 项将由 GitHub Ubuntu CI 验证。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 

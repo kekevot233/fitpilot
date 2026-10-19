@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend tests and PostgreSQL integration
+    name: Backend tests and PostgreSQL/Redis integration
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -38,7 +38,7 @@ jobs:
         run: docker info
 
       # Surefire runs the fast tests; Failsafe runs *IT and fails verify on errors.
-      # Testcontainers owns its temporary PostgreSQL database and cleanup.
+      # Testcontainers owns its temporary PostgreSQL/Redis containers and cleanup.
       - name: Run backend tests and Testcontainers integration tests
         run: mvn --batch-mode --no-transfer-progress -Pintegration-tests verify
 
@@ -125,7 +125,7 @@ jobs:
       - name: Build and start the production deployment topology
         run: docker compose -f compose.deploy.yaml up --build --detach --wait --wait-timeout 180
 
-      - name: Run Playwright against the production Spring Boot image and PostgreSQL
+      - name: Run Playwright against the production image, PostgreSQL and Redis
         working-directory: web
         run: npm run test:e2e
 
@@ -147,6 +147,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Stop application and remove the CI database volume
+      - name: Stop application and remove the CI data volumes
         if: ${{ always() }}
         run: docker compose -f compose.deploy.yaml down --volumes --remove-orphans
