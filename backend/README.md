@@ -229,7 +229,7 @@ The default provider is DeepSeek's OpenAI-compatible Chat Completions API. Set t
 ```powershell
 $env:AI_API_KEY = "your-api-key"
 $env:AI_BASE_URL = "https://api.deepseek.com"
-$env:AI_MODEL = "deepseek-chat"
+$env:AI_MODEL = "deepseek-flash"
 mvn spring-boot:run
 ```
 
@@ -250,6 +250,10 @@ The protected endpoint is `POST /api/me/ai-nutrition/estimate`:
 ```
 
 The backend asks the model for per-100g values, validates their ranges, calculates the serving totals itself, and returns a confidence level and assumptions. A missing key returns HTTP `503`; provider or malformed-output failures return HTTP `502`. AI estimates can vary substantially with oil, sugar, ingredients, and cooking method, so the web UI requires confirmation before saving.
+
+For the official `api.deepseek.com` endpoint, requests explicitly disable thinking mode and allow up to 1024 output tokens. This provider-specific parameter is omitted for other compatible endpoints. A `finish_reason` of `length` returns a readable error instead of attempting to parse truncated JSON. The default model is `deepseek-flash`; keep the key only in local environment configuration or the deployment platform's secret settings.
+
+On 2026-10-19, one real model request through the local web UI completed in about 2.9 seconds (HTTP 200). The UI then created a custom food and food log (HTTP 201 each), and both were readable after refresh. The dedicated account's temporary log was deleted and food archived afterward. This was a single live integration check, not a rerun of the automated suites or a benchmark of nutrition accuracy.
 
 Create a food whose nutrition values are specified per 100 grams:
 

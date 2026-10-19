@@ -59,7 +59,7 @@ fitpilot:
     # OpenAI-compatible Chat Completions API. Keep the key in an environment variable.
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
     api-key: ${AI_API_KEY:}
-    model: ${AI_MODEL:deepseek-chat}
+    model: ${AI_MODEL:deepseek-flash}
     timeout-seconds: ${AI_TIMEOUT_SECONDS:25}
   security:
     login-protection:

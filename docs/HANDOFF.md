@@ -322,11 +322,15 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 页面显示本次热量、三大营养素、可信度和模型采用的做法假设。用户可修改每 100g 数值，或确认后创建食物并直接写入当天饮食记录。
 - 后端接口：`POST /api/me/ai-nutrition/estimate`，受 JWT 保护。
 - 后端实现采用 OpenAI-compatible Chat Completions + JSON mode；默认配置为 DeepSeek，也可通过环境变量切换兼容供应商。
-- 配置：`AI_API_KEY`（必需）、`AI_BASE_URL`（默认 `https://api.deepseek.com`）、`AI_MODEL`（默认 `deepseek-chat`）、`AI_TIMEOUT_SECONDS`（默认 25）。密钥只保留在后端。
+- 配置：`AI_API_KEY`（必需）、`AI_BASE_URL`（默认 `https://api.deepseek.com`）、`AI_MODEL`（默认 `deepseek-flash`）、`AI_TIMEOUT_SECONDS`（默认 25，本次本地设为 60）。密钥只保留在后端。
 - 后端把菜名序列化为数据，提示模型忽略菜名中的指令；模型只估算每 100g 数值，本次克数换算由后端执行。返回值会检查非负、最大值和宏量营养素总量。
 - 没有配置密钥时返回 503；供应商失败或模型 JSON 无效时返回 502。复合菜估算有误差，前端保存前必须确认。
 - 相关文件：`AiNutritionController`、`AiNutritionEstimateService`、`OpenAiCompatibleChatClient`、`FoodEntryForm.tsx`。
-- 当前没有真实 API Key，因此已验证请求构造、解析、换算、异常和鉴权，但尚未调用真实供应商。
+- 早期验证使用模拟响应，未调用真实供应商；2026-10-19 用户配置本地密钥后，已完成一次真实 DeepSeek 网页联调。先经官方 `/models` 认证确认可用模型，将旧配置 `deepseek-chat` 改为 `deepseek-flash`；密钥始终保留在被忽略的 `.env`，公开 `.env.example` 不含真实密钥。
+- 官方 DeepSeek 主机的请求显式加入 `thinking.type=disabled`，其他兼容供应商不发送该专属参数；输出上限由 400 提升为 1024，并检测 `finish_reason=length`，截断时返回可读错误。Java、application.yml、两套 Compose 和示例配置的默认模型已同步。
+- 真实桌面 Chromium 操作：专用联调账户输入“少油宫保鸡丁（AI联调）”200g → 网页调用估算接口 HTTP 200（约 2.9 秒）→ 展示营养值、假设与可信度 → 确认创建食物和饮食记录（均 HTTP 201）→ 刷新页面后记录仍可见、自定义食物接口可查。全程仅 1 次模型生成请求，无 mock；联调后删除临时饮食记录并归档临时食物，未修改用户自己的记录。
+- 本次估算样例返回 200g 合计 330 kcal、蛋白质 29g、碳水 17g、脂肪 17g，可信度 MEDIUM；仅证明真实调用、解析和保存闭环，不能据单次样例认定营养准确性或稳定性能。临时脚本、截图及响应位于被 Git 忽略的 `backend/target/`，不提交密钥、令牌或原始联调产物。
+- 按用户测试频率要求，仅重建后端（跳过自动化测试）、检查四服务健康并执行上述单次真实联调；未运行完整 Maven、Vitest、Playwright 套件或 GitHub CI。运行更新：`docker compose up -d --build --wait backend` 后 `docker compose restart web`。
 
 ## 网页核心流程测试（已实现）
 

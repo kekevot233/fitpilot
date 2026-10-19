@@ -39,6 +39,8 @@ docker compose up --build
 
 默认配置可以直接用于本地体验。需要配置 AI、修改端口或替换本地开发密钥时，先把 `.env.example` 复制为 `.env`，再修改 `.env`；真实密钥不会被 Git 跟踪。
 
+启用 AI 营养估算时，在本地 `.env` 中填写自己的 `AI_API_KEY`，使用 `AI_BASE_URL=https://api.deepseek.com` 与 `AI_MODEL=deepseek-flash`，可将 `AI_TIMEOUT_SECONDS` 设置为 60。执行 `docker compose up -d --build --wait backend` 加载配置，再执行 `docker compose restart web` 刷新连接。登录网页后输入菜名和克数，点击“用 AI 按菜名和克数估算”，确认结果后保存；模型 API 需要可用额度。2026-10-19 已用真实 DeepSeek 调用验证估算、确认保存及刷新后持久化。
+
 停止全部服务并释放 8080/5173：
 
 ```powershell

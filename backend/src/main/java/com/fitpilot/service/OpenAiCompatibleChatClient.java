@@ -31,7 +31,7 @@ public class OpenAiCompatibleChatClient implements AiChatCompletionClient {
             ObjectMapper objectMapper,
             @Value("${fitpilot.ai.base-url:https://api.deepseek.com}") String baseUrl,
             @Value("${fitpilot.ai.api-key:}") String apiKey,
-            @Value("${fitpilot.ai.model:deepseek-chat}") String model,
+            @Value("${fitpilot.ai.model:deepseek-flash}") String model,
             @Value("${fitpilot.ai.timeout-seconds:25}") long timeoutSeconds) {
         this(objectMapper, HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(Math.max(1, timeoutSeconds)))
@@ -61,14 +61,18 @@ public class OpenAiCompatibleChatClient implements AiChatCompletionClient {
         ObjectNode body = objectMapper.createObjectNode();
         body.put("model", model);
         body.put("temperature", 0.2);
-        body.put("max_tokens", 400);
+        body.put("max_tokens", 1024);
         body.putObject("response_format").put("type", "json_object");
         ArrayNode messages = body.putArray("messages");
         messages.addObject().put("role", "system").put("content", systemPrompt);
         messages.addObject().put("role", "user").put("content", userPrompt);
 
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
+            URI providerUri = URI.create(endpoint);
+            if ("api.deepseek.com".equalsIgnoreCase(providerUri.getHost())) {
+                body.putObject("thinking").put("type", "disabled");
+            }
+            HttpRequest request = HttpRequest.newBuilder(providerUri)
                     .timeout(timeout)
                     .header("Authorization", "Bearer " + apiKey)
                     .header("Content-Type", "application/json")
@@ -83,6 +87,9 @@ public class OpenAiCompatibleChatClient implements AiChatCompletionClient {
             }
 
             JsonNode root = objectMapper.readTree(response.body());
+            if ("length".equals(root.path("choices").path(0).path("finish_reason").asText())) {
+                throw new AiNutritionException("大模型输出达到长度上限，请缩短菜品描述后重试。", false);
+            }
             JsonNode content = root.path("choices").path(0).path("message").path("content");
             if (!content.isTextual() || content.asText().isBlank()) {
                 throw new AiNutritionException("大模型没有返回可用的营养估算结果。", false);

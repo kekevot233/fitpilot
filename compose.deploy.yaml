@@ -46,7 +46,7 @@ services:
       JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-1440}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
-      AI_MODEL: ${AI_MODEL:-deepseek-chat}
+      AI_MODEL: ${AI_MODEL:-deepseek-flash}
       AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-25}
     depends_on:
       redis:
