@@ -155,7 +155,8 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - Redis 读取失败直接回退数据库并跳过本请求的缓存写入，避免重复等待；写入失败、JSON 损坏或字段不完整同样不阻断食物搜索。此处是性能缓存，与 Redis 故障时必须暂停的登录保护分开处理。
 - 内置食物库更新最多延迟一个 TTL 反映在搜索；需即时刷新可执行 `docker compose exec redis redis-cli DEL fitpilot:foods:search:v1`。使用 `HLEN` / `TTL` 检查容量和过期；不要使用 FLUSHDB / FLUSHALL，以免清除登录限流。
 - 新增 5 个快速测试覆盖不可用读取、失败写入、损坏 JSON、缓存关闭和长关键词；3 个真实 Redis 集成测试验证跨实例命中、空结果缓存、BigDecimal、TTL、并发容量和不续期。现有 PostgreSQL 集成套件增加真实用户隔离、编辑/归档后立即可见，以及缓存内容不含私人食物的验证。
-- 本机 `mvn -Pintegration-tests verify`：104 个快速测试、12 个容器集成测试（PostgreSQL 4、独立 Redis 8）通过；真实开发 Compose 的桌面/手机 Chromium 8 项通过，Redis 中实际生成带 TTL 的搜索缓存，四服务 healthy。完整 GitHub CI 待本轮推送验证。
+- 本机 `mvn -Pintegration-tests verify`：104 个快速测试、12 个容器集成测试（PostgreSQL 4、独立 Redis 8）通过；真实开发 Compose 的桌面/手机 Chromium 8 项通过，Redis 中实际生成带 TTL 的搜索缓存，四服务 healthy。
+- 远端 [GitHub Actions 39191545974](https://github.com/kekevot233/fitpilot/actions/runs/39191545974)（提交 `f2a1746`）三个任务全部成功：104 个快速测试、12 个容器集成测试、14 个 Vitest、生产构建，以及生产镜像连接 PostgreSQL / Redis 上包含 Firefox 的 12 个 Playwright 执行项。三类报告已上传，临时容器和数据卷已清理。
 
 ## Redis 登录失败限流（2026-10-19）
 
@@ -517,7 +518,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-当前本地验证（2026-10-19）：后端 `104` 个快速测试和 `12` 个 Testcontainers 集成测试（PostgreSQL 4、独立 Redis 8）通过；开发 Compose 后端已重建且四服务 healthy，桌面/手机 Chromium `8` 项通过。本轮 GitHub CI 待记录。此前前端 `14` 个 Vitest、生产构建和包含 Firefox 的 `12` 项浏览器测试在 [GitHub Actions 39187897581](https://github.com/kekevot233/fitpilot/actions/runs/39187897581)（提交 `df861d7`）通过；本机 Firefox 曾报启动 `spawn UNKNOWN`。
+当前验证（2026-10-19）：后端 `104` 个快速测试和 `12` 个 Testcontainers 集成测试（PostgreSQL 4、独立 Redis 8）通过；开发 Compose 后端已重建且四服务 healthy，桌面/手机 Chromium `8` 项通过。前端 `14` 个 Vitest、生产构建和包含 Firefox 的 `12` 项浏览器测试在本轮 [GitHub Actions 39191545974](https://github.com/kekevot233/fitpilot/actions/runs/39191545974)（提交 `f2a1746`）全部通过；本机 Firefox 曾报启动 `spawn UNKNOWN`，跨浏览器验收以 Ubuntu CI 为准。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 

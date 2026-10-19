@@ -113,8 +113,8 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 12 个 Playwright 执行项；2026-10-19 [登录失败限流 GitHub CI](https://github.com/kekevot233/fitpilot/actions/runs/39187897581)（提交 `df861d7`）三个任务全部通过，三类测试报告均已上传。
-- 后端测试：104 个快速单元 / MVC 测试、12 个 Testcontainers 集成测试通过（4 个 PostgreSQL 场景、8 个独立 Redis 场景），覆盖迁移、用户隔离、登录限流、搜索缓存命中/过期/并发容量和故障回退；2026-10-19 在本机 Docker 环境验证。本轮远端 CI 待推送验证。
+- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 12 个 Playwright 执行项；2026-10-19 [Redis 搜索缓存 GitHub CI](https://github.com/kekevot233/fitpilot/actions/runs/39191545974)（提交 `f2a1746`）三个任务全部通过，三类测试报告均已上传。
+- 后端测试：104 个快速单元 / MVC 测试、12 个 Testcontainers 集成测试通过（4 个 PostgreSQL 场景、8 个独立 Redis 场景），覆盖迁移、用户隔离、登录限流、搜索缓存命中/过期/并发容量和故障回退；2026-10-19 本机 Docker 与 GitHub Ubuntu CI 均通过。
 - 前端测试：14 个 Vitest 测试通过，新增登录 429/503 倒计时、恢复提交及账号切换；TypeScript 检查和 Vite 生产构建通过。Playwright 有 4 个场景，新增真实连续失败限流与伪造转发头不能绕过，在三个浏览器/视口共 12 个执行项。
 - 本轮浏览器验证：本机桌面和手机 Chromium 共 8 项通过，GitHub Ubuntu CI 在生产镜像、PostgreSQL 和 Redis 上验证包含 Firefox 的 12 项全部通过；覆盖原有饮食、体重流程，以及登录限流倒计时、账号隔离和伪造转发头。
 - npm 依赖审计：0 个已知漏洞。
