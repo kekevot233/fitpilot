@@ -111,13 +111,13 @@ Java 21 + Spring Boot 单体后端
 
 ## 当前质量基线
 
-- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 12 个 Playwright 执行项；本轮完整 CI 待推送后验证。此前 2026-10-17 [体重记录管理 GitHub CI](https://github.com/kekevot233/fitpilot/actions/runs/39019935648)（提交 `7f54779`）三个任务全部通过。
+- `.github/workflows/ci.yml` 使用桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 共 12 个 Playwright 执行项；2026-10-19 [登录失败限流 GitHub CI](https://github.com/kekevot233/fitpilot/actions/runs/39187897581)（提交 `df861d7`）三个任务全部通过，三类测试报告均已上传。
 - 后端测试：99 个快速单元 / MVC 测试通过；8 个 Testcontainers 集成测试通过（3 个 PostgreSQL、5 个 Redis），覆盖业务数据库、登录并发额度、共享失败计数、隔离和过期恢复；2026-10-19 在本机 Docker 环境验证。
 - 前端测试：14 个 Vitest 测试通过，新增登录 429/503 倒计时、恢复提交及账号切换；TypeScript 检查和 Vite 生产构建通过。Playwright 有 4 个场景，新增真实连续失败限流与伪造转发头不能绕过，在三个浏览器/视口共 12 个执行项。
-- 本轮浏览器验证：本机桌面和手机 Chromium 共 8 项通过，覆盖原有饮食、体重流程，以及登录限流倒计时、账号隔离和伪造转发头；包含 Firefox 的 12 项待 GitHub Ubuntu CI 验证。
+- 本轮浏览器验证：本机桌面和手机 Chromium 共 8 项通过，GitHub Ubuntu CI 在生产镜像、PostgreSQL 和 Redis 上验证包含 Firefox 的 12 项全部通过；覆盖原有饮食、体重流程，以及登录限流倒计时、账号隔离和伪造转发头。
 - npm 依赖审计：0 个已知漏洞。
 - Docker Compose 四容器开发环境联合验收通过：PostgreSQL、Redis、Spring Boot、Nginx/React 均为 healthy；原 PostgreSQL 数据卷保留。
-- 单服务生产镜像联合验收通过：production profile 使用 Render 风格 `connectionString` 连接独立 PostgreSQL，健康、首页、静态资源与 OpenAPI 返回成功，未登录业务 API 返回 401；桌面和手机 Chromium 6 项通过。
+- 单服务生产镜像联合验收通过：production profile 使用独立 PostgreSQL 与 Redis，GitHub CI 确认健康启动并完成三类浏览器的 12 项验证；Render 风格数据库 `connectionString`、静态资源、OpenAPI 和未登录 API 的 401 已在此前验收中确认。
 - 从全新容器数据库启动时，Flyway 自动完成 V1 → V2 → V3，初始化 85 个食物；真实链路已验证“登录 → 搜索熟米饭 → 记录 200g → Dashboard 显示 260 kcal → 切换减脂计划并重算目标”。
 - 后端能够连接真实 PostgreSQL 启动；现有数据库 V3 基线接管，以及 Docker 临时空库从 V1 到 V3 的完整迁移均已验证。
 - Swagger UI 提供接口文档和手动测试入口。

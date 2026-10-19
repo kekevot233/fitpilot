@@ -157,6 +157,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 两套 Compose 都增加私网 Redis 7.4、健康依赖、AOF 数据卷与 `noeviction` 策略；无需迁移 PostgreSQL。Render Blueprint 增加私网 Key Value 并自动注入 `REDIS_URL`，free 示例重启可能丢计数，正式部署需评估持久化套餐。Redis 不发布宿主机端口；Maven 直跑需另外提供可达的 Redis URL。
 - 测试覆盖原子并发预留、跨客户端共享、桶隔离、成功清理、失败窗口与崩溃预留过期、可信代理/伪造头、429/503 契约、前端倒计时。Playwright 新增真实失败 5 次触发限流及伪造转发头不能绕过的场景。
 - 本地验证：99 个后端单元/MVC 测试、8 个 Testcontainers 测试（PostgreSQL 3、Redis 5）、14 个 Vitest 及生产构建通过；桌面/手机 Chromium 共 8 项通过。开发 Compose 四服务均 healthy，保留原 PostgreSQL 数据卷。
+- 远端验证：[GitHub Actions 39187897581](https://github.com/kekevot233/fitpilot/actions/runs/39187897581)（提交 `df861d7`）三个任务全部成功，生产镜像连接 PostgreSQL / Redis 完成包含 Firefox 的 12 个 Playwright 执行项；三类测试报告均上传，临时容器及数据卷已清理。
 
 ## 体重明细与误录删除（2026-10-17）
 
@@ -505,7 +506,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-当前本地验证（2026-10-19）：前端 `14` 个 Vitest 测试和生产构建通过；后端 `99` 个快速测试和 `8` 个 Testcontainers 集成测试（PostgreSQL 3、Redis 5）通过。开发 Compose 四服务均 healthy，桌面/手机 Chromium `8` 项通过。本机 Firefox 曾报启动 `spawn UNKNOWN`，本轮包含 Firefox 的 `12` 项将由 GitHub Ubuntu CI 验证。
+当前验证（2026-10-19）：前端 `14` 个 Vitest 测试和生产构建通过；后端 `99` 个快速测试和 `8` 个 Testcontainers 集成测试（PostgreSQL 3、Redis 5）通过。开发 Compose 四服务均 healthy，桌面/手机 Chromium `8` 项通过。本机 Firefox 曾报启动 `spawn UNKNOWN`，GitHub Ubuntu CI 已在生产镜像、PostgreSQL 和 Redis 上验证包含 Firefox 的 `12` 项全部通过。完整结果见 [GitHub Actions 39187897581](https://github.com/kekevot233/fitpilot/actions/runs/39187897581)（提交 `df861d7`）。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 
