@@ -5,6 +5,7 @@ import com.fitpilot.config.FoodCacheProperties;
 import com.fitpilot.domain.Food;
 import com.fitpilot.repository.FoodRepository;
 import com.fitpilot.service.BuiltInFoodSearchCache;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.*;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -31,6 +32,7 @@ class FoodSearchCacheIT {
     private StringRedisTemplate redis;
     private FoodRepository repository;
     private FoodCacheProperties properties;
+    private SimpleMeterRegistry registry;
 
     @BeforeEach
     void setup() {
@@ -41,13 +43,14 @@ class FoodSearchCacheIT {
         redis.delete(BuiltInFoodSearchCache.KEY);
         repository = mock(FoodRepository.class);
         properties = new FoodCacheProperties();
+        registry = new SimpleMeterRegistry();
     }
 
     @AfterEach
     void cleanup() { connection.destroy(); }
 
     private BuiltInFoodSearchCache instance() {
-        return new BuiltInFoodSearchCache(redis, new ObjectMapper(), repository, properties);
+        return new BuiltInFoodSearchCache(redis, new ObjectMapper(), repository, properties, registry);
     }
 
     @Test
@@ -65,6 +68,8 @@ class FoodSearchCacheIT {
         assertThat(second.search("不存在")).isEmpty();
         verify(repository, times(1)).findBuiltInByKeyword("米饭");
         verify(repository, times(1)).findBuiltInByKeyword("不存在");
+        assertThat(registry.get("fitpilot.food.cache.requests").tag("result", "hit").counter().count()).isEqualTo(3);
+        assertThat(registry.get("fitpilot.food.cache.requests").tag("result", "miss").counter().count()).isEqualTo(2);
         assertThat(redis.opsForHash().keys(BuiltInFoodSearchCache.KEY))
                 .allSatisfy(key -> assertThat(key.toString()).matches("[0-9a-f]{64}"));
         assertThat(redis.getExpire(BuiltInFoodSearchCache.KEY)).isBetween(1L, 300L);

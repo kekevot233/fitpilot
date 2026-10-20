@@ -116,9 +116,12 @@ The current migration chain is:
 V1__create_initial_schema.sql
 V2__add_custom_food_ownership.sql
 V3__add_food_log_nutrition_snapshots.sql
+V4__index_nutrition_targets_and_recent_foods.sql
 ```
 
-Existing MVP databases are baselined at V3 on their first Flyway-managed startup. Empty databases execute V1 through V3. Never edit a migration that has already been applied: create a new `V4__description.sql` file for the next schema change. Flyway verifies migration checksums and will reject an edited historical migration.
+Existing pre-Flyway MVP databases are baselined at V3 on their first Flyway-managed startup, then run V4. Empty databases execute V1 through V4. Never edit an applied migration: use a new V5 or later file for future schema changes. Flyway verifies migration checksums and will reject an edited historical migration.
+
+V4 adds `(user_id, effective_date DESC, id DESC)` on `nutrition_targets` for historical/latest target lookup, and `(user_id, food_id, eaten_at DESC, id DESC)` on `food_logs` for the recent-food anti-join. Existing daily-food and unique user/date weight indexes remain in place. This migration changes indexes only, preserving records and nutrition snapshots. Ordinary index creation can briefly block writes while migrating; plan maintenance or a separate concurrent-index migration when tables become large. Query speed depends on the data and planner; no measured production speedup is claimed.
 
 ## Automated tests
 
@@ -134,7 +137,7 @@ Run the complete test suite, including an isolated PostgreSQL integration test:
 mvn -Pintegration-tests verify
 ```
 
-The integration profile requires Docker Desktop. Testcontainers starts temporary `postgres:17-alpine` and Ryuk containers, applies Flyway V1 through V3 to an empty database, starts the Spring context with Hibernate validation, checks the schema and default food data, and removes the containers afterward. It never connects to the local `fitpilot` database. The Failsafe profile pins Docker API `1.40` for compatibility with newer Docker Desktop engines; this setting affects tests only.
+The integration profile requires Docker Desktop. Testcontainers starts temporary PostgreSQL/Redis containers and Ryuk, applies Flyway V1 through V4 to an empty database, starts the Spring context with Hibernate validation, checks the schema and default food data, and removes the containers afterward. A separate temporary V3 schema with a saved food-log snapshot also verifies a data-preserving upgrade to V4. These checks never use the local business database or Redis state. The Failsafe profile pins Docker API `1.40` for compatibility with newer Docker Desktop engines; this setting affects tests only.
 
 When the application starts, Flyway creates or upgrades the schema and JPA validates that the entities match it. Register with:
 
@@ -194,6 +197,18 @@ Only configured `LOGIN_TRUSTED_PROXIES` may supply forwarded source addresses; o
 `GET /api/foods?keyword=...` caches only built-in food results in Redis. Custom foods are fetched from PostgreSQL for the authenticated user on every request, so creating, editing or archiving a custom food takes effect immediately. Results are combined and ordered by name, then ID. Nutrition calculations and saved food-log snapshots still use authoritative database values.
 
 `FOOD_CACHE_ENABLED` defaults to `true`; `FOOD_CACHE_TTL_SECONDS` defaults to `300` (valid range 1–3600). The shared hash `fitpilot:foods:search:v1` holds at most 128 query entries. Field names are SHA-256 digests of trimmed keywords; values contain public food DTOs, including empty results. Queries longer than 128 characters and serialized results over 262144 characters bypass caching. A Lua script enforces capacity and expiry atomically; new entries do not extend the current hash's lifetime. Concurrent misses may perform duplicate database reads, but cannot exceed the cache capacity.
+
+Redis read/write failures pause this application's food cache for `FOOD_CACHE_BACKOFF_SECONDS` (default 5, range 1–60). Searches during that pause go directly to PostgreSQL. After the pause only one request probes Redis; other concurrent searches keep using the database. Successful reads restore caching; failed probes start another pause. In-flight requests can still incur the configured Redis timeout. Invalid cached JSON is refreshed without treating it as a connection outage, and a full cache is not counted as a fault. Login protection has its own fail-closed behavior and is unaffected by this cache backoff.
+
+The existing Micrometer registry now records the following process-local metrics. Labels are a fixed set and never contain keywords, account IDs or Redis connection strings:
+
+| Metric | Meaning |
+| --- | --- |
+| `fitpilot.food.cache.requests` | `result`: hit, miss, bypass, cooldown, read_error, invalid |
+| `fitpilot.food.cache.writes` | `result`: stored, capacity, skipped, error |
+| `fitpilot.food.cache.database.load` | Database load timer, including count and total duration |
+
+Metrics reset on process restart and need aggregation when multiple backends run. Only the health endpoint remains exposed; this change does not publish `/actuator/metrics` or add an external monitoring dashboard. A later monitoring integration can export these meters with its own access controls. Recovery/fallback logs contain no raw request data or connection exception details.
 
 Database matching rules, including `LIKE` wildcards and case behavior, remain in the repository queries. Cache errors or malformed JSON fall back to PostgreSQL. A failed cache read skips the write attempt to avoid a second timeout. Built-in catalog updates can take up to the configured TTL to appear in search; for immediate refresh, delete only this cache hash. Do not flush Redis, which also stores login protection.
 

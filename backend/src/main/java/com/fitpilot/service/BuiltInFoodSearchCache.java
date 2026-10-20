@@ -6,6 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fitpilot.config.FoodCacheProperties;
 import com.fitpilot.dto.food.FoodResponse;
 import com.fitpilot.repository.FoodRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -20,6 +24,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.EnumMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 
 @Service
 @Profile("!no-db")
@@ -37,55 +47,127 @@ public class BuiltInFoodSearchCache {
     private final ObjectMapper mapper;
     private final FoodRepository repository;
     private final FoodCacheProperties properties;
+    private enum Outcome { HIT, MISS, BYPASS, COOLDOWN, READ_ERROR, INVALID }
+    private enum Write { STORED, CAPACITY, SKIPPED, ERROR }
+    private record RedisState(long retryAtNanos, boolean probing) { }
+    private static final RedisState READY = new RedisState(0, false);
+    private final AtomicReference<RedisState> redisState = new AtomicReference<>(READY);
+    private final LongSupplier nanoTime;
+    private final Map<Outcome, Counter> requests = new EnumMap<>(Outcome.class);
+    private final Map<Write, Counter> writes = new EnumMap<>(Write.class);
+    private final Timer databaseLoads;
 
+    @Autowired
     public BuiltInFoodSearchCache(StringRedisTemplate redis, ObjectMapper mapper,
-                                 FoodRepository repository, FoodCacheProperties properties) {
+                                 FoodRepository repository, FoodCacheProperties properties, MeterRegistry registry) {
+        this(redis, mapper, repository, properties, registry, System::nanoTime);
+    }
+
+    BuiltInFoodSearchCache(StringRedisTemplate redis, ObjectMapper mapper,
+                          FoodRepository repository, FoodCacheProperties properties,
+                          MeterRegistry registry, LongSupplier nanoTime) {
         this.redis = redis;
         this.mapper = mapper;
         this.repository = repository;
         this.properties = properties;
+        this.nanoTime = nanoTime;
+        for (Outcome result : Outcome.values()) {
+            requests.put(result, registry.counter("fitpilot.food.cache.requests", "result", result.name().toLowerCase(Locale.ROOT)));
+        }
+        for (Write result : Write.values()) {
+            writes.put(result, registry.counter("fitpilot.food.cache.writes", "result", result.name().toLowerCase(Locale.ROOT)));
+        }
+        databaseLoads = registry.timer("fitpilot.food.cache.database.load");
     }
 
     public List<FoodResponse> search(String keyword) {
         // Preserve the database's case/collation and LIKE rules, including wildcard searches.
         boolean cacheable = properties.isEnabled() && keyword.length() <= 128;
         String field = cacheable ? digest(keyword) : "";
+        Outcome outcome = cacheable ? Outcome.MISS : Outcome.BYPASS;
+        RedisState probe = null;
+        if (cacheable) {
+            RedisState state = redisState.get();
+            if (state != READY) {
+                // Only one request probes Redis when the backoff expires; others keep using PostgreSQL.
+                RedisState candidate = new RedisState(state.retryAtNanos(), true);
+                if (state.probing() || nanoTime.getAsLong() - state.retryAtNanos() < 0
+                        || !redisState.compareAndSet(state, candidate)) {
+                    cacheable = false;
+                    outcome = Outcome.COOLDOWN;
+                } else {
+                    probe = candidate;
+                }
+            }
+        }
         if (cacheable) {
             try {
                 String json = redis.<String, String>opsForHash().get(KEY, field);
+                if (probe != null && redisState.compareAndSet(probe, READY)) {
+                    log.info("Food search Redis cache recovered");
+                }
                 if (json != null) {
                     List<FoodResponse> cached = mapper.readValue(json, RESULTS);
                     if (cached != null && cached.stream().allMatch(food -> food != null
                             && food.id() > 0 && food.name() != null
                             && food.caloriesPer100g() != null && food.proteinPer100g() != null
                             && food.carbsPer100g() != null && food.fatPer100g() != null)) {
+                        requests.get(Outcome.HIT).increment();
                         return List.copyOf(cached);
                     }
+                    outcome = Outcome.INVALID;
                 }
             } catch (DataAccessException exception) {
                 cacheable = false; // Avoid a second Redis timeout while serving this request.
-                log.debug("Food cache unavailable; using database search");
+                outcome = Outcome.READ_ERROR;
+                pauseCache();
             } catch (JsonProcessingException exception) {
+                outcome = Outcome.INVALID;
                 log.debug("Invalid food cache value; refreshing from database");
+            } finally {
+                // Never leave the single recovery probe occupied after an unexpected failure.
+                if (probe != null) redisState.compareAndSet(probe, READY);
             }
         }
 
-        List<FoodResponse> result = repository.findBuiltInByKeyword(keyword).stream()
+        requests.get(outcome).increment();
+        List<FoodResponse> result = databaseLoads.record(() -> repository.findBuiltInByKeyword(keyword).stream()
                 .map(food -> new FoodResponse(food.getId(), food.getName(), food.getCaloriesPer100g(),
                         food.getProteinPer100g(), food.getCarbsPer100g(), food.getFatPer100g()))
-                .toList();
-        if (cacheable) {
+                .toList());
+        if (cacheable && redisState.get() == READY) {
             try {
                 String json = mapper.writeValueAsString(result);
                 if (json.length() <= 262144) {
-                    redis.execute(PUT, List.of(KEY), field, json,
+                    Long stored = redis.execute(PUT, List.of(KEY), field, json,
                             String.valueOf(properties.getTtlSeconds()), "128");
+                    if (stored == null || (stored != 0 && stored != 1)) {
+                        writes.get(Write.ERROR).increment();
+                        pauseCache();
+                    } else {
+                        writes.get(stored == 1 ? Write.STORED : Write.CAPACITY).increment();
+                    }
+                } else {
+                    writes.get(Write.SKIPPED).increment();
                 }
-            } catch (DataAccessException | JsonProcessingException exception) {
+            } catch (DataAccessException exception) {
+                writes.get(Write.ERROR).increment();
+                pauseCache();
+            } catch (JsonProcessingException exception) {
+                writes.get(Write.SKIPPED).increment();
                 log.debug("Food cache write skipped; returning database results");
             }
         }
         return result;
+    }
+
+    private void pauseCache() {
+        long retryAt = nanoTime.getAsLong() + TimeUnit.SECONDS.toNanos(properties.getFailureBackoffSeconds());
+        RedisState previous = redisState.getAndSet(new RedisState(retryAt, false));
+        if (previous == READY || previous.probing()) {
+            // Deliberately omit the exception, connection URL, keyword and user data from logs.
+            log.warn("Food search cache unavailable; temporarily using PostgreSQL");
+        }
     }
 
     private static String digest(String keyword) {

@@ -59,6 +59,7 @@ fitpilot:
     food-search:
       enabled: ${FOOD_CACHE_ENABLED:true}
       ttl-seconds: ${FOOD_CACHE_TTL_SECONDS:300}
+      failure-backoff-seconds: ${FOOD_CACHE_BACKOFF_SECONDS:5}
   ai:
     # OpenAI-compatible Chat Completions API. Keep the key in an environment variable.
     base-url: ${AI_BASE_URL:https://api.deepseek.com}

@@ -150,6 +150,16 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 前端组件：`web/src/components/BodyProfilePanel.tsx`。
 - 验证：前端 `npm run build` 成功；后端 `mvn -o test` 共 49 项通过。
 
+## 数据库查询索引与 Redis 缓存退避（2026-10-20）
+
+- 新增 `V4__index_nutrition_targets_and_recent_foods.sql`：`nutrition_targets(user_id, effective_date DESC, id DESC)` 对齐按用户读取历史/最新目标；`food_logs(user_id, food_id, eaten_at DESC, id DESC)` 支持最近食物的反连接查新记录。已有饮食 user/date 索引和体重 user/date 唯一索引继续保留，不重复建设；不修改 V1–V3，不改业务表或快照数据。
+- `BuiltInFoodSearchCache` 在 Redis 读写失败或脚本返回异常空值时开启实例内退避，默认 5 秒（`FOOD_CACHE_BACKOFF_SECONDS`，1–60）。退避期间直接查询 PostgreSQL；到期用原子状态只允许一个请求探测恢复，其他请求仍回源。恢复成功后重新使用缓存，失败则继续退避。已在途请求仍可能等待一次 Redis 超时；数据库异常不伪装成缓存成功。
+- 缓存满额（Lua 返回 0）只记容量跳过，不触发故障退避；JSON 损坏走刷新，长关键词、关闭开关、超大 JSON 保持原有旁路。成功请求不会覆盖其他并发请求刚写入的故障状态。仅食物缓存改变，登录限流不绕过。
+- 使用现有 Actuator/Micrometer 依赖注册固定标签指标：`fitpilot.food.cache.requests`（hit/miss/bypass/cooldown/read_error/invalid）、`fitpilot.food.cache.writes`（stored/capacity/skipped/error）和 `fitpilot.food.cache.database.load` Timer（回源次数和耗时）。不以关键词、ID 或邮箱作标签，日志不带连接信息。指标按实例启动累计，重启清零；没有开放 metrics HTTP 入口或接入外部看板，公开端点仍仅 health。
+- 两套 Compose、application.yml、`.env.example` 同步退避参数。缓存构造器注入 MeterRegistry；测试用 SimpleMeterRegistry 和可控纳秒时钟，不用真实等待模拟退避。普通缓存并发未命中仍可能重复回源，暂不引入分布式锁。
+- 因本轮涉及真实迁移，只运行相关验证：`mvn -Pintegration-tests -Dtest=BuiltInFoodSearchCacheTest -Dit.test=DatabaseMigrationIT,FoodSearchCacheIT verify`。缓存定向单元 8 项、临时 PostgreSQL/Redis 集成 8 项通过，包含 V1→V4 空库建表、已有 V3 升级后饮食快照不变、索引列顺序、并发单探测恢复和缓存命中指标。未运行其他套件或完整 CI，不调用模型。最近完整套件记录仍是 `f2a1746`。
+- 本机已应用 V4，两索引存在且 Flyway 1–4 均成功；users/foods/food_logs/weight_logs/nutrition_targets 迁移前后行数一致，四服务 healthy。真实登录、重复搜索、Dashboard 和最近食物查询均 200，重复搜索结果一致，后端 `/actuator/metrics` 仍为 404。检查该管理路径需直接访问后端端口，Nginx 对非 /api 路径会回退前端 HTML。未改业务数据、不触发模型。普通 CREATE INDEX 会在建索引期间短暂阻塞写入，数据量增大后应安排维护或新增单独的并发索引迁移；不宣称未经压测的性能提升。
+
 ## 后端请求校验与统一错误返回（2026-10-20）
 
 - `ApiExceptionHandler` 继承 Spring `ResponseEntityExceptionHandler`，将常见 MVC 请求错误统一为 `application/problem+json`；既有业务异常、登录限流的 429 / Retry-After 和 Redis 故障语义保持不变。
@@ -282,9 +292,10 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - `V1__create_initial_schema.sql`：创建 9 张业务表、外键、唯一约束和查询索引。
 - `V2__add_custom_food_ownership.sql`：加入自定义食物归属、归档字段及作用域唯一索引。
 - `V3__add_food_log_nutrition_snapshots.sql`：加入并回填历史营养快照。
+- `V4__index_nutrition_targets_and_recent_foods.sql`：补充历史营养目标及最近食物复合索引，不改业务记录。
 - 现有 `public` schema 首次启动时使用 `baseline-on-migrate` 登记为 V3，不重复执行已有结构；数据验证前后均为 2 个用户、85 个食物、2 条饮食记录和 3 条营养目标。
 - 在隔离的空 schema 中验证了 V1 → V2 → V3：三次迁移全部成功，Hibernate 校验通过，创建 9 张业务表并初始化 85 个食物。验证 schema 随后已删除，不涉及正式数据。
-- 已删除两个临时 Java `ApplicationRunner` 迁移器，后续数据库结构变化只能新增 V4、V5 等 SQL 文件。
+- 已删除两个临时 Java `ApplicationRunner` 迁移器，V4 已新增；后续数据库结构变化只能继续新增 V5、V6 等 SQL 文件。
 - 已经执行过的迁移文件不得修改；Flyway 会校验历史文件 checksum。需要更正时必须新增下一版本迁移。
 - 当前 Flyway 10.20.1 在 PostgreSQL 18.6 上验证成功，但启动日志提示其官方测试范围到 PostgreSQL 17；后续升级 Spring Boot/Flyway 时应重新验证。
 
@@ -293,13 +304,13 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 空数据库迁移验证已经固化为自动化测试，不再依赖人工创建临时 schema。
 
 - 测试文件：`backend/src/test/java/com/fitpilot/integration/DatabaseMigrationIT.java`。
-- `mvn test` 继续只运行 104 个快速单元 / MVC 测试，不要求 Docker 或 Redis。
+- `mvn test` 当前包含 107 个快速单元 / MVC 测试，不要求 Docker 或 Redis。本轮仅运行缓存相关 8 项，最近完整快速套件通过记录仍为旧版 104 项。
 - `mvn -Pintegration-tests verify` 先运行快速测试，再由 Maven Failsafe 执行 `*IT` 集成测试。
 - Testcontainers 启动临时 `postgres:17-alpine`，Spring Boot 的 `@ServiceConnection` 自动注入 JDBC 连接；测试结束后 Ryuk 自动清理容器。
-- 集成测试关闭 Flyway 自动基线，从真正的空库执行 V1 → V2 → V3，并让 Hibernate `validate` 检查实体映射。
-- 断言内容：迁移版本必须恰好为 1、2、3；必须存在 9 张业务表；`food_logs` 五个营养快照字段必须为 `NOT NULL`；默认食物必须初始化为 85 个；最近食物查询必须对同一种食物只返回最新一条份量和餐次。
+- 集成测试关闭 Flyway 自动基线，从真正的空库执行 V1 → V2 → V3 → V4，并让 Hibernate `validate` 检查实体映射；另有带数据的 V3 升级场景。
+- 断言内容：迁移版本必须恰好为 1、2、3、4；必须存在 9 张业务表；`food_logs` 五个营养快照字段必须为 `NOT NULL`；默认食物必须初始化为 85 个；最近食物查询必须对同一种食物只返回最新一条份量和餐次；新增复合索引的列顺序正确，旧索引保留，V3 升级快照不变。
 - Failsafe 测试 JVM 固定 `api.version=1.40`，用于兼容 Docker Desktop 29 的最低 API 限制，只影响集成测试。
-- 集成套件现有 4 个 PostgreSQL 测试（搜索隔离场景同时连接临时 Redis），以及 `LoginRateLimiterIT` 的 5 个、`FoodSearchCacheIT` 的 3 个独立 Redis 测试。容器各自清理，不连接或修改本地业务数据库、缓存与限流状态。
+- 集成套件现有 5 个 PostgreSQL 测试（搜索隔离场景同时连接临时 Redis），以及 `LoginRateLimiterIT` 的 5 个、`FoodSearchCacheIT` 的 3 个独立 Redis 测试，共 13 项。本轮仅运行数据库和搜索缓存的 8 项，不将未运行的登录套件计入通过数量。容器各自清理，不连接或修改本地业务数据库、缓存与限流状态。
 
 ## 最近使用食物（已实现）
 
@@ -376,7 +387,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 - 工作流：`.github/workflows/ci.yml`；按用户 2026-10-19 要求，仅保留手动 `workflow_dispatch`，push 和 pull request 不自动触发。较大更新后在 GitHub Actions 页面选择 CI → Run workflow，或执行 `gh workflow run ci.yml --ref main`；普通小改动只做必要检查。
 - 工作流包含三个 `ubuntu-24.04` 任务：后端与前端先并行，二者通过后再运行端到端任务：
-  - `Backend tests and PostgreSQL/Redis integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。Surefire 执行 104 个快速测试，Failsafe 执行 12 个 `*IT` 测试（PostgreSQL 4、独立 Redis 8）并在 verify 阶段报告失败；同一次 Maven 生命周期完成测试和后端打包。
+  - `Backend tests and PostgreSQL/Redis integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。当前配置 Surefire 包含 107 个快速测试，Failsafe 包含 13 个 `*IT` 测试（PostgreSQL 5、独立 Redis 8）并在 verify 阶段报告失败；本轮没有触发整个工作流，旧运行记录不代表新版整套已通过。
   - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。
   - `Playwright end-to-end`：安装 Chromium、Firefox 与系统依赖，执行 `docker compose -f compose.deploy.yaml up --build --detach --wait`，再运行 `npm run test:e2e`。它验证与 Render 相同的单服务生产镜像、PostgreSQL 与 Redis；无论成功失败都用相同 Compose 文件删除容器和临时数据卷。
 - 后端任务直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine` 和 `redis:7.4-alpine`；E2E 任务另起生产镜像、PostgreSQL 与 Redis Compose 环境，使用专用数据库密码和 JWT secret。两者都不访问开发者数据库，也不需要仓库 secrets。
@@ -535,7 +546,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-最近一次完整自动化验证（2026-10-19）：后端 `104` 个快速测试和 `12` 个 Testcontainers 集成测试（PostgreSQL 4、独立 Redis 8）通过；桌面/手机 Chromium `8` 项通过。前端 `14` 个 Vitest、生产构建和包含 Firefox 的 `12` 项浏览器测试在 [GitHub Actions 39191545974](https://github.com/kekevot233/fitpilot/actions/runs/39191545974)（提交 `f2a1746`）全部通过；本机 Firefox 曾报启动 `spawn UNKNOWN`，跨浏览器验收以 Ubuntu CI 为准。2026-10-20 仅完成后端编译、错误契约与正常查询的 HTTP 检查，四服务 healthy，未重跑这些套件。
+最近一次完整自动化验证（2026-10-19）：后端 `104` 个快速测试和 `12` 个 Testcontainers 集成测试（PostgreSQL 4、独立 Redis 8）通过；桌面/手机 Chromium `8` 项通过。前端 `14` 个 Vitest、生产构建和包含 Firefox 的 `12` 项浏览器测试在 [GitHub Actions 39191545974](https://github.com/kekevot233/fitpilot/actions/runs/39191545974)（提交 `f2a1746`）全部通过；本机 Firefox 曾报启动 `spawn UNKNOWN`，跨浏览器验收以 Ubuntu CI 为准。2026-10-20 后续只做后端错误契约 HTTP 检查，以及本轮数据库/缓存定向单元 8 项和集成 8 项，均通过；本机 V4 迁移成功、业务表行数保留、四服务 healthy。未重跑完整套件或 CI，不调用模型。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 

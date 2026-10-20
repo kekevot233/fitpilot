@@ -10,6 +10,7 @@ import com.fitpilot.service.FoodLogService;
 import com.fitpilot.service.WeightLogService;
 import com.fitpilot.dto.weight.UpsertWeightLogRequest;
 import com.fitpilot.exception.ResourceNotFoundException;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -63,6 +64,45 @@ class DatabaseMigrationIT {
     private WeightLogService weightLogService;
     @Autowired
     private StringRedisTemplate redis;
+
+    @Test
+    void upgradesAnExistingV3SchemaWithoutChangingFoodLogSnapshots() {
+        String schema = "upgrade_v3_check";
+        Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema).defaultSchema(schema).target("3").load().migrate();
+        Long userId = jdbcTemplate.queryForObject("""
+                INSERT INTO upgrade_v3_check.users (activity_level, age, gender, goal, height_cm, nickname,
+                                                   weekly_training_frequency, weight_kg)
+                VALUES ('MODERATE', 22, 'MALE', 'MAINTAIN', 183, 'Upgrade fixture', 3, 76)
+                RETURNING id
+                """, Long.class);
+        Long foodId = jdbcTemplate.queryForObject("""
+                INSERT INTO upgrade_v3_check.foods (name, calories_per100g, protein_per100g, carbs_per100g, fat_per100g)
+                VALUES ('Migration fixture', 130, 2.7, 28.2, 0.3) RETURNING id
+                """, Long.class);
+        jdbcTemplate.update("""
+                INSERT INTO upgrade_v3_check.food_logs
+                (user_id, food_id, grams, meal_type, eaten_at, food_name_snapshot, calories_per_100g_snapshot,
+                 protein_per_100g_snapshot, carbs_per_100g_snapshot, fat_per_100g_snapshot)
+                VALUES (?, ?, 200, 'LUNCH', '2026-10-19 12:00:00', 'Recorded snapshot', 123, 3, 25, 1)
+                """, userId, foodId);
+        String original = jdbcTemplate.queryForObject(
+                "SELECT to_jsonb(log)::text FROM upgrade_v3_check.food_logs log", String.class);
+
+        Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema).defaultSchema(schema).load().migrate();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT to_jsonb(log)::text FROM upgrade_v3_check.food_logs log", String.class)).isEqualTo(original);
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT version FROM upgrade_v3_check.flyway_schema_history
+                WHERE type = 'SQL' AND success ORDER BY installed_rank
+                """, String.class)).containsExactly("1", "2", "3", "4");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM pg_indexes WHERE schemaname = 'upgrade_v3_check'
+                  AND indexname IN ('idx_nutrition_targets_user_date_id', 'idx_food_logs_user_food_eaten_id')
+                """, Integer.class)).isEqualTo(2);
+    }
 
     @Test
     @Transactional
@@ -128,10 +168,22 @@ class DatabaseMigrationIT {
                 "SELECT count(*) FROM foods", Integer.class
         );
 
-        assertThat(appliedVersions).containsExactly("1", "2", "3");
+        assertThat(appliedVersions).containsExactly("1", "2", "3", "4");
         assertThat(businessTableCount).isEqualTo(9);
         assertThat(incompleteSnapshotColumns).isZero();
         assertThat(initializedFoods).isEqualTo(85);
+        List<String> indexes = jdbcTemplate.queryForList("""
+                SELECT indexname FROM pg_indexes
+                WHERE schemaname = current_schema()
+                  AND indexname IN ('idx_nutrition_targets_user_date_id', 'idx_food_logs_user_food_eaten_id',
+                                    'idx_food_logs_user_eaten_at', 'uk_weight_logs_user_date')
+                """, String.class);
+        assertThat(indexes).containsExactlyInAnyOrder("idx_nutrition_targets_user_date_id",
+                "idx_food_logs_user_food_eaten_id", "idx_food_logs_user_eaten_at", "uk_weight_logs_user_date");
+        assertThat(jdbcTemplate.queryForObject("SELECT pg_get_indexdef('idx_nutrition_targets_user_date_id'::regclass)", String.class))
+                .contains("(user_id, effective_date DESC, id DESC)");
+        assertThat(jdbcTemplate.queryForObject("SELECT pg_get_indexdef('idx_food_logs_user_food_eaten_id'::regclass)", String.class))
+                .contains("(user_id, food_id, eaten_at DESC, id DESC)");
     }
 
     @Test
