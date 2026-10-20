@@ -10,6 +10,8 @@ FitPilot 是一个面向健身新手和日常健身用户的饮食与训练规�
 
 食物搜索会将内置食物结果缓存到 Redis，最长保留 5 分钟；自定义食物仍实时按用户从 PostgreSQL 查询，修改和归档立即生效。缓存故障会回退数据库，不阻断搜索。可用 `FOOD_CACHE_ENABLED=false` 关闭缓存，或通过 `FOOD_CACHE_TTL_SECONDS`（1–3600，默认 300）调整期限。
 
+后端常见参数与权限错误统一返回 Problem Detail JSON，包含可展示的错误说明和可识别的字段提示。食物和饮食记录 ID 校验正数，整数参数不再静默截断小数；未登录、越权和非法输入分别保留 401、403、400 状态。详见 [后端接口说明](backend/README.md#api-error-responses)。
+
 ## Repository layout
 
 ```text

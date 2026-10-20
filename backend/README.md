@@ -29,6 +29,33 @@ http://localhost:8080/v3/api-docs.yaml
 
 先通过 `POST /api/auth/register` 或 `POST /api/auth/login` 获得 `accessToken`。测试需要登录的接口时，点击 Swagger 页面右上角的 **Authorize**，粘贴 token；Swagger 会自动添加 `Authorization: Bearer <token>` 请求头。
 
+## API error responses
+
+Common request and permission failures use `application/problem+json`, with `type`, `title`, `status` and `detail`. Validation failures also provide a `fieldErrors` object when a field or parameter can be identified. Clients should branch on HTTP status and use `detail` for display; they should not parse exception class names or depend on exact message wording.
+
+| Status | Meaning |
+| --- | --- |
+| 400 | Invalid JSON, missing request body/parameter, invalid date/number/enum, or failed validation |
+| 401 | Missing or invalid login token; includes `WWW-Authenticate: Bearer` |
+| 403 | Access to another user's resources is forbidden |
+| 404 / 409 | Resource missing / business conflict |
+| 405 / 415 | Unsupported method / content type; framework response headers such as `Allow` are preserved |
+| 429 | Login failure cooldown; existing `Retry-After` and `retryAfterSeconds` are preserved |
+
+For example, an invalid `endDate` yields HTTP 400:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "参数 endDate 必须是有效日期，格式为 YYYY-MM-DD。",
+  "fieldErrors": { "endDate": "必须是有效日期，格式为 YYYY-MM-DD。" }
+}
+```
+
+Food IDs in food-log/preview bodies and custom-food/log IDs in update/delete paths must be positive. JSON fractional values are rejected for integer fields (including IDs and age), rather than silently truncated. Error responses do not echo rejected values, passwords, tokens, Jackson exception text or database exception details. Existing business messages and status codes remain compatible.
+
 ## Start the nutrition API without PostgreSQL
 
 `/api/nutrition/calculate` 是纯计算接口。为了在尚未创建数据表时也能启动项目，使用 `no-db` 配置关闭数据库自动配置：

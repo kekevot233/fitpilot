@@ -5,6 +5,8 @@ import com.fitpilot.dto.food.FoodLogResponse;
 import com.fitpilot.service.FoodLogService;
 import com.fitpilot.service.UserAccessGuard;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import org.springframework.validation.annotation.Validated;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@Validated
 @Profile("!no-db")
 @RequestMapping("/api/users/{userId}/food-logs")
 @Tag(name = "饮食记录", description = "新增、修改和删除用户饮食记录")
@@ -46,7 +49,7 @@ public class FoodLogController {
     @PutMapping("/{foodLogId}")
     @Operation(summary = "修改饮食记录")
     public FoodLogResponse update(@PathVariable long userId,
-                                  @PathVariable long foodLogId,
+                                  @PathVariable @Positive(message = "记录 ID 必须为正整数。") long foodLogId,
                                   @Valid @RequestBody CreateFoodLogRequest request) {
         userAccessGuard.check(userId);
         return foodLogService.update(userId, foodLogId, request);
@@ -55,7 +58,8 @@ public class FoodLogController {
     @DeleteMapping("/{foodLogId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "删除饮食记录")
-    public void delete(@PathVariable long userId, @PathVariable long foodLogId) {
+    public void delete(@PathVariable long userId,
+                       @PathVariable @Positive(message = "记录 ID 必须为正整数。") long foodLogId) {
         userAccessGuard.check(userId);
         foodLogService.delete(userId, foodLogId);
     }

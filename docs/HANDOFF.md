@@ -2,7 +2,7 @@
 
 > 工作目录：`D:\code\fitapp`  
 > 当前阶段：网页端饮食记录 MVP；后端 Spring Boot + PostgreSQL；前端 React + Vite。  
-> 最后更新：2026-10-19
+> 最后更新：2026-10-20
 
 ## 文档维护规则
 
@@ -27,6 +27,8 @@
 4. 完成后说明改了什么、怎样验证、用户接下来怎样使用。
 
 第一阶段不要过度设计：不引入微服务、消息队列或 AI。中文交流。
+
+2026-10-20 用户决定先完善后端，暂缓 Agent 环节。保留已经跑通的可选 AI 营养估算；本轮未提交的 Agent 定义、执行器、接口和模型客户端扩展已撤回。后续优先后端接口、数据一致性、权限与运行维护，未经用户再次要求不继续扩展 Agent。
 
 ## 技术栈与目录
 
@@ -147,6 +149,15 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 每日 `weight_logs` 只负责趋势，不会自动改变计划体重基准。这样可以避免水分波动导致每日热量目标跟着抖动；用户确认保存身体资料时才会重算。
 - 前端组件：`web/src/components/BodyProfilePanel.tsx`。
 - 验证：前端 `npm run build` 成功；后端 `mvn -o test` 共 49 项通过。
+
+## 后端请求校验与统一错误返回（2026-10-20）
+
+- `ApiExceptionHandler` 继承 Spring `ResponseEntityExceptionHandler`，将常见 MVC 请求错误统一为 `application/problem+json`；既有业务异常、登录限流的 429 / Retry-After 和 Redis 故障语义保持不变。
+- 请求体为空或 JSON 损坏、日期/数字/枚举不匹配、缺少必填参数返回 400；可以识别时附加 `fieldErrors`。绑定错误只提取字段路径，不回显提交值或 Jackson 原始异常。既有 Bean Validation 和查询范围校验同样提供字段信息；MVC 原生方法校验的返回值错误仍为 500，不误报为用户输入问题。
+- `ApiSecurityErrorHandler` 统一安全过滤器中的 401/403 响应，401 保留 `WWW-Authenticate: Bearer`；控制器内用户越权同样返回 Problem Detail 403。不暴露令牌、密码或鉴权异常细节。
+- 食物预览和饮食录入 DTO 的 `foodId` 增加正数校验；自定义食物与饮食记录的编辑/删除路径 ID 增加正数校验。Jackson 设置 `accept-float-as-int=false`，避免小数 ID、年龄等被静默截断。405 / 415 等框架错误继续保留原有状态和 `Allow` 等响应头。
+- 无数据库迁移、新依赖或前端修改；已有正常请求格式不变。示例及错误契约见 `backend/README.md` 的 API error responses。
+- 本轮验证限于后端镜像编译（跳过测试）和本机实际接口冒烟检查：未登录/无效令牌 401、越权 403，非法日期/数字/数量范围/JSON/字段类型/非正数 ID 均 400；确认敏感占位输入不回显、405 保留 Allow、415 返回 Problem Detail，正常登录和查询为 200。整数严格解析新增验证：`foodId: 1.5` 返回 400 和 foodId 字段提示；四服务 healthy。不运行 Maven/Vitest/Playwright 套件或完整 CI，不发起模型调用、不写业务数据；临时检查脚本只在忽略的 target 目录。最近一次完整测试快照仍对应 `f2a1746`，不要将旧数量记为本轮重跑结果。
 
 ## Redis 内置食物搜索缓存（2026-10-19）
 
@@ -524,7 +535,7 @@ $env:MAVEN_OPTS = '-Dmaven.repo.local=D:\code\fitapp\.m2'
 mvn -o -Pintegration-tests verify
 ```
 
-当前验证（2026-10-19）：后端 `104` 个快速测试和 `12` 个 Testcontainers 集成测试（PostgreSQL 4、独立 Redis 8）通过；开发 Compose 后端已重建且四服务 healthy，桌面/手机 Chromium `8` 项通过。前端 `14` 个 Vitest、生产构建和包含 Firefox 的 `12` 项浏览器测试在本轮 [GitHub Actions 39191545974](https://github.com/kekevot233/fitpilot/actions/runs/39191545974)（提交 `f2a1746`）全部通过；本机 Firefox 曾报启动 `spawn UNKNOWN`，跨浏览器验收以 Ubuntu CI 为准。
+最近一次完整自动化验证（2026-10-19）：后端 `104` 个快速测试和 `12` 个 Testcontainers 集成测试（PostgreSQL 4、独立 Redis 8）通过；桌面/手机 Chromium `8` 项通过。前端 `14` 个 Vitest、生产构建和包含 Firefox 的 `12` 项浏览器测试在 [GitHub Actions 39191545974](https://github.com/kekevot233/fitpilot/actions/runs/39191545974)（提交 `f2a1746`）全部通过；本机 Firefox 曾报启动 `spawn UNKNOWN`，跨浏览器验收以 Ubuntu CI 为准。2026-10-20 仅完成后端编译、错误契约与正常查询的 HTTP 检查，四服务 healthy，未重跑这些套件。
 
 2026-10-13 再次运行后端快速测试时，Maven 在覆盖 `target/classes/application-no-db.yml` 时遇到 Windows `Access denied`；随后尝试离线 `clean`，但工作区 `.m2` 尚未缓存 `maven-clean-plugin:3.4.1`。这不代表 Java 测试失败，本轮也没有修改 Java 业务代码。下一次联网或使用已缓存完整插件的 Maven 仓库执行 `mvn clean test` 即可重新生成该构建目录。
 

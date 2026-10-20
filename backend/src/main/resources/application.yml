@@ -1,6 +1,10 @@
 spring:
   application:
     name: fitpilot-backend
+  jackson:
+    deserialization:
+      # Reject fractional IDs/ages instead of silently truncating them to integers.
+      accept-float-as-int: false
   datasource:
     # Environment variables keep local credentials out of Git.
     url: ${DB_URL:jdbc:postgresql://localhost:5432/fitpilot}
