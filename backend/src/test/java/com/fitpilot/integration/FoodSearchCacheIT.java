@@ -54,6 +54,36 @@ class FoodSearchCacheIT {
     }
 
     @Test
+    void sameInstanceColdRequestsShareOneDatabaseLoadAndThenUseRedis() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(repository.findBuiltInByKeyword("cold")).thenAnswer(call -> {
+            entered.countDown();
+            if (!release.await(3, TimeUnit.SECONDS)) throw new IllegalStateException("Release timed out");
+            return List.of();
+        });
+        var cache = instance();
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            var leader = workers.submit(() -> cache.search("cold"));
+            try {
+                assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+                var follower = workers.submit(() -> cache.search("cold"));
+                await().pollInterval(Duration.ofMillis(1)).atMost(Duration.ofSeconds(2))
+                        .until(() -> registry.get("fitpilot.food.cache.coalescing").tag("result", "shared").counter().count() == 1);
+                release.countDown();
+                assertThat(follower.get(2, TimeUnit.SECONDS)).isEmpty();
+                assertThat(leader.get(2, TimeUnit.SECONDS)).isEmpty();
+            } finally {
+                release.countDown();
+            }
+        }
+        assertThat(instance().search("cold")).isEmpty();
+        verify(repository, times(1)).findBuiltInByKeyword("cold");
+        assertThat(registry.get("fitpilot.food.cache.coalescing").tag("result", "timeout").counter().count()).isZero();
+        assertThat(registry.get("fitpilot.food.cache.database.load").timer().count()).isEqualTo(1);
+    }
+
+    @Test
     void instancesShareJsonResultsAndCacheEmptySearches() {
         var food = new Food("熟米饭", new BigDecimal("130.00"), new BigDecimal("2.70"),
                 new BigDecimal("28.20"), new BigDecimal("0.30"));

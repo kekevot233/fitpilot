@@ -28,6 +28,11 @@ import java.util.EnumMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
@@ -56,6 +61,10 @@ public class BuiltInFoodSearchCache {
     private final Map<Outcome, Counter> requests = new EnumMap<>(Outcome.class);
     private final Map<Write, Counter> writes = new EnumMap<>(Write.class);
     private final Timer databaseLoads;
+    private enum Coalescing { LEADER, SHARED, TIMEOUT, SATURATED, INTERRUPTED }
+    private final Map<Coalescing, Counter> coalescing = new EnumMap<>(Coalescing.class);
+    private final ConcurrentHashMap<String, CompletableFuture<List<FoodResponse>>> inFlight = new ConcurrentHashMap<>();
+    private final Semaphore flightSlots = new Semaphore(64);
 
     @Autowired
     public BuiltInFoodSearchCache(StringRedisTemplate redis, ObjectMapper mapper,
@@ -78,9 +87,60 @@ public class BuiltInFoodSearchCache {
             writes.put(result, registry.counter("fitpilot.food.cache.writes", "result", result.name().toLowerCase(Locale.ROOT)));
         }
         databaseLoads = registry.timer("fitpilot.food.cache.database.load");
+        for (Coalescing result : Coalescing.values()) {
+            coalescing.put(result, registry.counter("fitpilot.food.cache.coalescing", "result", result.name().toLowerCase(Locale.ROOT)));
+        }
     }
 
     public List<FoodResponse> search(String keyword) {
+        if (!properties.isEnabled() || keyword.length() > 128) return searchOnce(keyword);
+        String field = digest(keyword);
+        CompletableFuture<List<FoodResponse>> existing = inFlight.get(field);
+        if (existing != null) return awaitResult(existing, keyword);
+        if (!flightSlots.tryAcquire()) {
+            coalescing.get(Coalescing.SATURATED).increment();
+            return searchOnce(keyword);
+        }
+        var flight = new CompletableFuture<List<FoodResponse>>();
+        existing = inFlight.putIfAbsent(field, flight);
+        if (existing != null) {
+            flightSlots.release();
+            return awaitResult(existing, keyword);
+        }
+        coalescing.get(Coalescing.LEADER).increment();
+        try {
+            List<FoodResponse> result = searchOnce(keyword);
+            flight.complete(result);
+            return result;
+        } catch (RuntimeException | Error exception) {
+            flight.completeExceptionally(exception);
+            throw exception;
+        } finally {
+            inFlight.remove(field, flight);
+            flightSlots.release();
+        }
+    }
+
+    private List<FoodResponse> awaitResult(CompletableFuture<List<FoodResponse>> flight, String keyword) {
+        coalescing.get(Coalescing.SHARED).increment();
+        try {
+            // Bound waiting on another request; do not cancel its work when this request times out.
+            return flight.get(200, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException exception) {
+            coalescing.get(Coalescing.TIMEOUT).increment();
+            return loadDatabase(keyword);
+        } catch (InterruptedException exception) {
+            coalescing.get(Coalescing.INTERRUPTED).increment();
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Food search interrupted", exception);
+        } catch (ExecutionException exception) {
+            if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
+            if (exception.getCause() instanceof Error error) throw error;
+            throw new IllegalStateException("Food search failed", exception.getCause());
+        }
+    }
+
+    private List<FoodResponse> searchOnce(String keyword) {
         // Preserve the database's case/collation and LIKE rules, including wildcard searches.
         boolean cacheable = properties.isEnabled() && keyword.length() <= 128;
         String field = cacheable ? digest(keyword) : "";
@@ -131,10 +191,7 @@ public class BuiltInFoodSearchCache {
         }
 
         requests.get(outcome).increment();
-        List<FoodResponse> result = databaseLoads.record(() -> repository.findBuiltInByKeyword(keyword).stream()
-                .map(food -> new FoodResponse(food.getId(), food.getName(), food.getCaloriesPer100g(),
-                        food.getProteinPer100g(), food.getCarbsPer100g(), food.getFatPer100g()))
-                .toList());
+        List<FoodResponse> result = loadDatabase(keyword);
         if (cacheable && redisState.get() == READY) {
             try {
                 String json = mapper.writeValueAsString(result);
@@ -159,6 +216,13 @@ public class BuiltInFoodSearchCache {
             }
         }
         return result;
+    }
+
+    private List<FoodResponse> loadDatabase(String keyword) {
+        return databaseLoads.record(() -> repository.findBuiltInByKeyword(keyword).stream()
+                .map(food -> new FoodResponse(food.getId(), food.getName(), food.getCaloriesPer100g(),
+                        food.getProteinPer100g(), food.getCarbsPer100g(), food.getFatPer100g()))
+                .toList());
     }
 
     private void pauseCache() {

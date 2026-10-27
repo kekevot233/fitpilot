@@ -451,6 +451,22 @@ On startup, the application inserts or calibrates 85 foods. Besides staple foods
 
 All values are per 100g. Ingredient values follow the USDA FoodData Central conventions; the Chinese compound-food entries are practical reference estimates compiled from public nutrition databases and common product labels. Recipe food is inherently less precise: oil, sugar, sauce, edible portion, and a restaurant's serving method can materially change its calories and macros. Use these entries to start logging, but use the package label for packaged food and create a custom food when a restaurant or recipe provides better information. Useful reference points include the [China Food Composition Database](https://nlc.chinanutri.cn/fq/), [USDA Foundation Foods documentation](https://fdc.nal.usda.gov/Foundation_Foods_Documentation/), and [downloadable USDA datasets](https://fdc.nal.usda.gov/download-datasets/).
 
+## Nutrition SQL and cache concurrency
+
+Nutrition trends use `FoodLogRepository.summarizeNutritionByDate`, a parameterized PostgreSQL aggregation over the user's timestamp range. It returns one projection per logged day, without loading FoodLog/Food entities. It uses stored snapshots, rounds each gram ratio to six decimal places and each entry's nutrients to one decimal place before summing, matching the Dashboard. Blank days and historical targets keep their existing API semantics. The timestamp predicates retain the existing `(user_id, eaten_at)` index; no schema migration is needed.
+
+Built-in search requests in the same backend instance share in-progress results for identical keywords. At most 64 leader requests are tracked; followers wait up to 200ms, then load the database independently without cancelling the leader. Distinct requests beyond the limit use the ordinary cache path. Completed/failed work is always removed, and database failures propagate rather than being cached. Custom foods remain queried separately by user. This does not provide cross-instance locking or prevent duplicate queries after timeout.
+
+`fitpilot.food.cache.coalescing` uses fixed `result` tags: `leader`, `shared`, `timeout`, `saturated`, `interrupted`. The existing `requests` counter counts requests that execute the ordinary cache path; it excludes shared followers. `database.load` still counts all actual loads, including timeout fallbacks. Metrics remain internal; no additional Actuator endpoint is exposed.
+
+Focused validation (requires Docker):
+
+```powershell
+mvn --batch-mode --no-transfer-progress -Pintegration-tests '-Dtest=NutritionTrendServiceTest,NutritionTrendControllerTest,BuiltInFoodSearchCacheTest' '-Dit.test=DatabaseMigrationIT,FoodSearchCacheIT' verify
+```
+
+The manual GitHub CI also supports `gh workflow run ci.yml --ref main -f scope=backend-data` for this selection, skipping frontend and browser jobs.
+
 ## Training plans
 
 Generate and save a beginner plan using the user's `weeklyTrainingFrequency`:

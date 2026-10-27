@@ -3,6 +3,14 @@ name: CI
 on:
   # Run for substantial updates on demand, rather than every small push or PR.
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Validation scope
+        type: choice
+        default: full
+        options:
+          - full
+          - backend-data
 
 permissions:
   contents: read
@@ -39,7 +47,15 @@ jobs:
       # Surefire runs the fast tests; Failsafe runs *IT and fails verify on errors.
       # Testcontainers owns its temporary PostgreSQL/Redis containers and cleanup.
       - name: Run backend tests and Testcontainers integration tests
+        if: ${{ inputs.scope != 'backend-data' }}
         run: mvn --batch-mode --no-transfer-progress -Pintegration-tests verify
+
+      - name: Verify nutrition SQL and Redis cache changes only
+        if: ${{ inputs.scope == 'backend-data' }}
+        run: >-
+          mvn --batch-mode --no-transfer-progress -Pintegration-tests
+          -Dtest=NutritionTrendServiceTest,NutritionTrendControllerTest,BuiltInFoodSearchCacheTest
+          -Dit.test=DatabaseMigrationIT,FoodSearchCacheIT verify
 
       - name: Upload backend test reports
         if: ${{ !cancelled() }}
@@ -53,6 +69,7 @@ jobs:
           retention-days: 14
 
   frontend:
+    if: ${{ inputs.scope != 'backend-data' }}
     name: Frontend Vitest and production build
     runs-on: ubuntu-24.04
     timeout-minutes: 10

@@ -1,10 +1,9 @@
 package com.fitpilot.service;
 
-import com.fitpilot.domain.FoodLog;
+import com.fitpilot.repository.DailyNutritionSummary;
 import com.fitpilot.domain.NutritionTarget;
 import com.fitpilot.dto.food.NutritionTrendPointResponse;
 import com.fitpilot.dto.food.NutritionTrendResponse;
-import com.fitpilot.dto.food.NutritionValuesResponse;
 import com.fitpilot.exception.ResourceNotFoundException;
 import com.fitpilot.repository.FoodLogRepository;
 import com.fitpilot.repository.NutritionTargetRepository;
@@ -30,16 +29,13 @@ public class NutritionTrendService {
     private final UserRepository userRepository;
     private final FoodLogRepository foodLogRepository;
     private final NutritionTargetRepository nutritionTargetRepository;
-    private final FoodNutritionCalculator foodNutritionCalculator;
 
     public NutritionTrendService(UserRepository userRepository,
                                  FoodLogRepository foodLogRepository,
-                                 NutritionTargetRepository nutritionTargetRepository,
-                                 FoodNutritionCalculator foodNutritionCalculator) {
+                                 NutritionTargetRepository nutritionTargetRepository) {
         this.userRepository = userRepository;
         this.foodLogRepository = foodLogRepository;
         this.nutritionTargetRepository = nutritionTargetRepository;
-        this.foodNutritionCalculator = foodNutritionCalculator;
     }
 
     @Transactional(readOnly = true)
@@ -49,11 +45,12 @@ public class NutritionTrendService {
         }
 
         LocalDate startDate = endDate.minusDays(days - 1L);
-        List<FoodLog> logs = foodLogRepository
-                .findByUserIdAndEatenAtGreaterThanEqualAndEatenAtLessThanOrderByEatenAtAsc(
+        List<DailyNutritionSummary> summaries = foodLogRepository
+                .summarizeNutritionByDate(
                         userId, startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay()
                 );
-        Map<LocalDate, DailyTotals> totalsByDate = summarize(logs);
+        Map<LocalDate, DailyNutritionSummary> totalsByDate = new HashMap<>();
+        summaries.forEach(summary -> totalsByDate.put(summary.getDate(), summary));
         List<NutritionTarget> targets = nutritionTargetRepository
                 .findByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateAscIdAsc(userId, endDate);
 
@@ -72,17 +69,21 @@ public class NutritionTrendService {
                 currentTarget = targets.get(targetIndex++);
             }
 
-            DailyTotals totals = totalsByDate.getOrDefault(date, new DailyTotals());
+            DailyNutritionSummary totals = totalsByDate.get(date);
+            BigDecimal calories = totals == null ? BigDecimal.ZERO : totals.getCalories();
+            BigDecimal protein = totals == null ? BigDecimal.ZERO : totals.getProtein();
+            BigDecimal carbs = totals == null ? BigDecimal.ZERO : totals.getCarbs();
+            BigDecimal fat = totals == null ? BigDecimal.ZERO : totals.getFat();
+            int logCount = totals == null ? 0 : totals.getLogCount();
             int targetCalories = currentTarget == null ? 0 : currentTarget.getCalories();
             points.add(new NutritionTrendPointResponse(
                     date, targetCalories,
-                    display(totals.calories), display(totals.protein),
-                    display(totals.carbs), display(totals.fat), totals.logCount
+                    display(calories), display(protein), display(carbs), display(fat), logCount
             ));
 
-            if (totals.logCount > 0) {
+            if (logCount > 0) {
                 daysLogged++;
-                loggedCalories = loggedCalories.add(totals.calories);
+                loggedCalories = loggedCalories.add(calories);
                 if (targetCalories > 0) {
                     loggedTargets = loggedTargets.add(BigDecimal.valueOf(targetCalories));
                     loggedDaysWithTarget++;
@@ -100,22 +101,6 @@ public class NutritionTrendService {
         );
     }
 
-    private Map<LocalDate, DailyTotals> summarize(List<FoodLog> logs) {
-        Map<LocalDate, DailyTotals> totalsByDate = new HashMap<>();
-        for (FoodLog log : logs) {
-            NutritionValuesResponse nutrition = foodNutritionCalculator.calculate(
-                    log.getCaloriesPer100gSnapshot(),
-                    log.getProteinPer100gSnapshot(),
-                    log.getCarbsPer100gSnapshot(),
-                    log.getFatPer100gSnapshot(),
-                    log.getGrams()
-            );
-            DailyTotals totals = totalsByDate.computeIfAbsent(log.getEatenAt().toLocalDate(), ignored -> new DailyTotals());
-            totals.add(nutrition);
-        }
-        return totalsByDate;
-    }
-
     private BigDecimal average(BigDecimal total, int count) {
         if (count == 0) return BigDecimal.ZERO.setScale(DISPLAY_SCALE);
         return total.divide(BigDecimal.valueOf(count), DISPLAY_SCALE, RoundingMode.HALF_UP);
@@ -125,19 +110,4 @@ public class NutritionTrendService {
         return value.setScale(DISPLAY_SCALE, RoundingMode.HALF_UP);
     }
 
-    private static final class DailyTotals {
-        private BigDecimal calories = BigDecimal.ZERO;
-        private BigDecimal protein = BigDecimal.ZERO;
-        private BigDecimal carbs = BigDecimal.ZERO;
-        private BigDecimal fat = BigDecimal.ZERO;
-        private int logCount;
-
-        private void add(NutritionValuesResponse values) {
-            calories = calories.add(values.calories());
-            protein = protein.add(values.protein());
-            carbs = carbs.add(values.carbs());
-            fat = fat.add(values.fat());
-            logCount++;
-        }
-    }
 }

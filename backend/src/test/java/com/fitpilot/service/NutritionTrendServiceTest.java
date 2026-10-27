@@ -1,11 +1,9 @@
 package com.fitpilot.service;
 
 import com.fitpilot.domain.ActivityLevel;
-import com.fitpilot.domain.Food;
-import com.fitpilot.domain.FoodLog;
 import com.fitpilot.domain.Gender;
 import com.fitpilot.domain.Goal;
-import com.fitpilot.domain.MealType;
+import com.fitpilot.repository.DailyNutritionSummary;
 import com.fitpilot.domain.NutritionTarget;
 import com.fitpilot.domain.User;
 import com.fitpilot.dto.food.NutritionTrendResponse;
@@ -17,16 +15,15 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class NutritionTrendServiceTest {
@@ -37,8 +34,6 @@ class NutritionTrendServiceTest {
     private FoodLogRepository foodLogRepository;
     @Mock
     private NutritionTargetRepository nutritionTargetRepository;
-    @Spy
-    private FoodNutritionCalculator foodNutritionCalculator = new FoodNutritionCalculator();
     @InjectMocks
     private NutritionTrendService service;
 
@@ -51,25 +46,15 @@ class NutritionTrendServiceTest {
                 "Zhengyi", Gender.MALE, 22, 183.0, 76.0,
                 ActivityLevel.MODERATE, Goal.FAT_LOSS, 4
         );
-        Food rice = new Food(
-                "熟米饭", new BigDecimal("130"), new BigDecimal("2.69"),
-                new BigDecimal("28.17"), new BigDecimal("0.28")
-        );
-        FoodLog first = new FoodLog(
-                user, rice, new BigDecimal("100"), MealType.LUNCH,
-                LocalDateTime.of(2026, 10, 9, 12, 0)
-        );
-        FoodLog second = new FoodLog(
-                user, rice, new BigDecimal("200"), MealType.DINNER,
-                LocalDateTime.of(2026, 10, 11, 18, 0)
-        );
+        DailyNutritionSummary first = summary(LocalDate.of(2026, 10, 9), "130");
+        DailyNutritionSummary second = summary(endDate, "260");
         NutritionTarget bulk = new NutritionTarget(user, 1800, 2750, 3000, 150, 450, 70,
                 LocalDate.of(2026, 10, 1));
         NutritionTarget fatLoss = new NutritionTarget(user, 1800, 2750, 2400, 150, 300, 70,
                 LocalDate.of(2026, 10, 10));
 
         when(userRepository.existsById(userId)).thenReturn(true);
-        when(foodLogRepository.findByUserIdAndEatenAtGreaterThanEqualAndEatenAtLessThanOrderByEatenAtAsc(
+        when(foodLogRepository.summarizeNutritionByDate(
                 userId, LocalDate.of(2026, 10, 5).atStartOfDay(), LocalDate.of(2026, 10, 12).atStartOfDay()
         )).thenReturn(List.of(first, second));
         when(nutritionTargetRepository
@@ -86,5 +71,16 @@ class NutritionTrendServiceTest {
         assertThat(response.points().get(4).targetCalories()).isEqualTo(hasEarlierTarget ? 3000 : 0);
         assertThat(response.points().get(5).targetCalories()).isEqualTo(2400);
         assertThat(response.points().get(6).calories()).isEqualByComparingTo("260.0");
+    }
+
+    private DailyNutritionSummary summary(LocalDate date, String calories) {
+        DailyNutritionSummary summary = mock(DailyNutritionSummary.class);
+        when(summary.getDate()).thenReturn(date);
+        when(summary.getCalories()).thenReturn(new BigDecimal(calories));
+        when(summary.getProtein()).thenReturn(BigDecimal.ZERO);
+        when(summary.getCarbs()).thenReturn(BigDecimal.ZERO);
+        when(summary.getFat()).thenReturn(BigDecimal.ZERO);
+        when(summary.getLogCount()).thenReturn(1);
+        return summary;
     }
 }

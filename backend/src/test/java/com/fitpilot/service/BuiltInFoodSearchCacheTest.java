@@ -17,8 +17,13 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -39,6 +44,92 @@ class BuiltInFoodSearchCacheTest {
                 new BigDecimal("28.20"), new BigDecimal("0.30"));
         ReflectionTestUtils.setField(food, "id", 1L);
         when(repository.findBuiltInByKeyword(anyString())).thenReturn(List.of(food));
+    }
+
+    @Test
+    void followersStopWaitingAndDoNotCancelTheOriginalDatabaseLoad() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(repository.findBuiltInByKeyword("slow")).thenAnswer(call -> {
+            if (entered.getCount() > 0) {
+                entered.countDown();
+                if (!release.await(3, TimeUnit.SECONDS)) throw new IllegalStateException("Release timed out");
+            }
+            return List.of();
+        });
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(1L);
+        try (var worker = Executors.newSingleThreadExecutor()) {
+            var leader = worker.submit(() -> cache.search("slow"));
+            try {
+                assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+                assertThat(cache.search("slow")).isEmpty();
+                assertThat(leader.isDone()).isFalse();
+                assertThat(registry.get("fitpilot.food.cache.coalescing").tag("result", "timeout").counter().count()).isEqualTo(1);
+            } finally {
+                release.countDown();
+            }
+            assertThat(leader.get(2, TimeUnit.SECONDS)).isEmpty();
+        }
+        verify(repository, times(2)).findBuiltInByKeyword("slow");
+    }
+
+    @Test
+    void databaseFailureReachesFollowersAndDoesNotPoisonLaterRequests() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var failure = new IllegalStateException("database unavailable");
+        when(repository.findBuiltInByKeyword("failure")).thenAnswer(call -> {
+            entered.countDown();
+            if (!release.await(3, TimeUnit.SECONDS)) throw new IllegalStateException("Release timed out");
+            throw failure;
+        }).thenReturn(List.of());
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(1L);
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            var leader = workers.submit(() -> cache.search("failure"));
+            try {
+                assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+                var follower = workers.submit(() -> cache.search("failure"));
+                await().pollInterval(java.time.Duration.ofMillis(1)).atMost(java.time.Duration.ofSeconds(2))
+                        .until(() -> registry.get("fitpilot.food.cache.coalescing").tag("result", "shared").counter().count() == 1);
+                release.countDown();
+                assertThatThrownBy(() -> follower.get(2, TimeUnit.SECONDS))
+                        .isInstanceOf(ExecutionException.class).hasCause(failure);
+                assertThatThrownBy(() -> leader.get(2, TimeUnit.SECONDS))
+                        .isInstanceOf(ExecutionException.class).hasCause(failure);
+            } finally {
+                release.countDown();
+            }
+        }
+        assertThat(cache.search("failure")).isEmpty();
+        verify(repository, times(2)).findBuiltInByKeyword("failure");
+    }
+
+    @Test
+    void excessDistinctRequestsBypassTheBoundedFlightTable() throws Exception {
+        var entered = new CountDownLatch(64);
+        var release = new CountDownLatch(1);
+        when(repository.findBuiltInByKeyword(anyString())).thenAnswer(call -> {
+            if (!call.getArgument(0).equals("overflow")) {
+                entered.countDown();
+                if (!release.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Release timed out");
+            }
+            return List.of();
+        });
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(1L);
+        try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
+            var leaders = java.util.stream.IntStream.range(0, 64)
+                    .mapToObj(i -> workers.submit(() -> cache.search("flight-" + i))).toList();
+            try {
+                assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
+                assertThat(cache.search("overflow")).isEmpty();
+                assertThat(registry.get("fitpilot.food.cache.coalescing").tag("result", "saturated").counter().count()).isEqualTo(1);
+            } finally {
+                release.countDown();
+            }
+            for (var leader : leaders) assertThat(leader.get(2, TimeUnit.SECONDS)).isEmpty();
+        }
+        assertThat(cache.search("overflow")).isEmpty();
+        assertThat(registry.get("fitpilot.food.cache.coalescing").tag("result", "leader").counter().count()).isEqualTo(65);
     }
 
     @Test

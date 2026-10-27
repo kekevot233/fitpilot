@@ -2,7 +2,7 @@
 
 > 工作目录：`D:\code\fitapp`  
 > 当前阶段：网页端饮食记录 MVP；后端 Spring Boot + PostgreSQL；前端 React + Vite。  
-> 最后更新：2026-10-20
+> 最后更新：2026-10-27
 
 ## 文档维护规则
 
@@ -149,6 +149,16 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - 每日 `weight_logs` 只负责趋势，不会自动改变计划体重基准。这样可以避免水分波动导致每日热量目标跟着抖动；用户确认保存身体资料时才会重算。
 - 前端组件：`web/src/components/BodyProfilePanel.tsx`。
 - 验证：前端 `npm run build` 成功；后端 `mvn -o test` 共 49 项通过。
+
+## SQL 营养趋势聚合与缓存并发请求合并（2026-10-27）
+
+- `FoodLogRepository.summarizeNutritionByDate` 使用 PostgreSQL 参数化 SQL 按用户和日期汇总记录，通过 `DailyNutritionSummary` 只读投影返回每天的热量、三大营养素与条数，不再为趋势加载完整 FoodLog/Food 实体。范围使用 `eaten_at >= start AND eaten_at < end`，继续利用 V1 的 user/time 索引；日期转换只用于分组。没有新增迁移，V1–V4 保持不变。
+- SQL 使用记录中的快照，保留 `FoodNutritionCalculator` 的重量比例六位、逐条营养一位 HALF_UP 规则，再 SUM；不能改为先 SUM 后 ROUND。空白日、历史目标、无目标日期和平均值的接口含义保持一致，私有趋势不缓存，写入后下次查询直接读取数据库。
+- `BuiltInFoodSearchCache` 使用实例内 ConcurrentHashMap/CompletableFuture 合并同关键词的进行中请求；跟随者复用已转换的公共食物 DTO，不共享私人食物查询或 JPA 实体。Semaphore 将进行中主请求限制为 64 个；跟随请求最多等待 200ms，超时直接查询数据库、不取消主请求；超额不同关键词走原查询。主请求成功或异常都会清理表项、释放额度；数据库异常传给跟随者，不缓存失败结果。关闭缓存或过长关键词仍旁路。
+- 新增固定标签指标 `fitpilot.food.cache.coalescing{result=leader|shared|timeout|saturated|interrupted}`。原 requests 指标统计执行原缓存流程的请求，跟随者看 shared，超时回源仍计 database.load；不能只用旧 requests 作为全部 HTTP 请求数。指标不含关键词、用户标签，不开放新管理端点。合并仅在同一后端实例内生效，不承诺跨实例冷查询只查一次，也不保证慢查询超时后无重复回源。
+- CI 保持手动运行，新增 `scope=backend-data`：仅运行 NutritionTrendServiceTest、NutritionTrendControllerTest、BuiltInFoodSearchCacheTest 和 DatabaseMigrationIT、FoodSearchCacheIT，并跳过前端和 E2E；默认 `full` 保留原完整验证。命令：`gh workflow run ci.yml --ref main -f scope=backend-data`。
+- 本机相关快速测试 16 项通过（缓存 11、趋势 Service 2、Controller 3）；真实 PostgreSQL/Redis 验证待本次定向 GitHub Actions 完成后补记。本机 Docker Desktop 因临时 socket 访问失败无法启动，未重置或删除数据卷；不要将旧的 healthy 记录当作本轮运行状态。不调用模型、不修改前端或业务数据。
+- 新增真实数据库用例比较 SQL 趋势与逐条计算的 Dashboard，覆盖逐条舍入、两端午夜边界、小数克数、用户隔离、食物归档后仍用快照及无目标空白日。Redis 集成增加同实例冷查询合并及随后跨实例命中；单元增加等待超时、异常传播/清理和 64 项容量边界。
 
 ## 数据库查询索引与 Redis 缓存退避（2026-10-20）
 
@@ -387,7 +397,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 
 - 工作流：`.github/workflows/ci.yml`；按用户 2026-10-19 要求，仅保留手动 `workflow_dispatch`，push 和 pull request 不自动触发。较大更新后在 GitHub Actions 页面选择 CI → Run workflow，或执行 `gh workflow run ci.yml --ref main`；普通小改动只做必要检查。
 - 工作流包含三个 `ubuntu-24.04` 任务：后端与前端先并行，二者通过后再运行端到端任务：
-  - `Backend tests and PostgreSQL/Redis integration`：Temurin Java 21，先用 `docker info` 检查 Docker，再运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`。当前配置 Surefire 包含 107 个快速测试，Failsafe 包含 13 个 `*IT` 测试（PostgreSQL 5、独立 Redis 8）并在 verify 阶段报告失败；本轮没有触发整个工作流，旧运行记录不代表新版整套已通过。
+  - `Backend tests and PostgreSQL/Redis integration`：Temurin Java 21，先用 `docker info` 检查 Docker；默认 full 运行 `mvn --batch-mode --no-transfer-progress -Pintegration-tests verify`，backend-data 仅运行上节列出的相关套件。当前配置 Surefire 包含 110 个快速测试，Failsafe 包含 15 个 `*IT` 测试（PostgreSQL 6、独立 Redis 9）；这些是代码数量，不表示本轮完整重跑，最近一次全量快照仍为 `f2a1746`。
   - `Frontend Vitest and production build`：Node.js 22（与前端 Dockerfile 主版本一致），依次执行 `npm ci`、`npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml`、`npm run build`，覆盖 Vitest、TypeScript 检查和 Vite 生产构建。依赖安装成功时，即使 Vitest 失败仍继续检查构建，但任务仍会失败。
   - `Playwright end-to-end`：安装 Chromium、Firefox 与系统依赖，执行 `docker compose -f compose.deploy.yaml up --build --detach --wait`，再运行 `npm run test:e2e`。它验证与 Render 相同的单服务生产镜像、PostgreSQL 与 Redis；无论成功失败都用相同 Compose 文件删除容器和临时数据卷。
 - 后端任务直接使用 runner 的 Docker，由 Testcontainers 创建及清理临时 `postgres:17-alpine` 和 `redis:7.4-alpine`；E2E 任务另起生产镜像、PostgreSQL 与 Redis Compose 环境，使用专用数据库密码和 JWT secret。两者都不访问开发者数据库，也不需要仓库 secrets。

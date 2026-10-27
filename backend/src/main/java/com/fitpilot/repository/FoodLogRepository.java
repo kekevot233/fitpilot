@@ -13,6 +13,25 @@ import java.util.Optional;
 
 public interface FoodLogRepository extends JpaRepository<FoodLog, Long> {
 
+    // Round each entry before summing, exactly as the Dashboard/calculator does.
+    // Keep the timestamp range on the indexed column, not on its date cast.
+    @Query(value = """
+            SELECT CAST(eaten_at AS date) AS date,
+                   SUM(ROUND(calories_per_100g_snapshot * ROUND(grams / 100, 6), 1)) AS calories,
+                   SUM(ROUND(protein_per_100g_snapshot * ROUND(grams / 100, 6), 1)) AS protein,
+                   SUM(ROUND(carbs_per_100g_snapshot * ROUND(grams / 100, 6), 1)) AS carbs,
+                   SUM(ROUND(fat_per_100g_snapshot * ROUND(grams / 100, 6), 1)) AS fat,
+                   COUNT(*) AS "logCount"
+            FROM food_logs
+            WHERE user_id = :userId AND eaten_at >= :start AND eaten_at < :end
+            GROUP BY CAST(eaten_at AS date)
+            ORDER BY date
+            """, nativeQuery = true)
+    List<DailyNutritionSummary> summarizeNutritionByDate(
+            @Param("userId") Long userId,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end);
+
     @EntityGraph(attributePaths = "food")
     Optional<FoodLog> findByIdAndUserId(Long id, Long userId);
 

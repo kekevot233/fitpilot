@@ -12,6 +12,8 @@ FitPilot 是一个面向健身新手和日常健身用户的饮食与训练规�
 
 缓存连接故障后，食物搜索会暂时跳过 Redis，默认 5 秒后由一个请求尝试恢复，避免每次查询重复等待超时；可用 `FOOD_CACHE_BACKOFF_SECONDS`（1–60）调整。已加入缓存命中、回源耗时和故障的内部监控指标；登录限流仍保持独立保护。数据库启动时会自动应用 Flyway V4，为历史营养目标和最近食物查询补充复合索引，保留原有数据。
 
+同一后端实例的相同食物查询会合并进行中的请求，最多保留 64 个主查询；跟随者最多等待 200 毫秒，超时直接查询数据库。营养趋势改由 SQL 按天汇总，保留历史营养快照与逐条舍入规则，无需修改已有数据库结构。
+
 后端常见参数与权限错误统一返回 Problem Detail JSON，包含可展示的错误说明和可识别的字段提示。食物和饮食记录 ID 校验正数，整数参数不再静默截断小数；未登录、越权和非法输入分别保留 401、403、400 状态。详见 [后端接口说明](backend/README.md#api-error-responses)。
 
 ## Repository layout
@@ -142,6 +144,8 @@ mvn -Pintegration-tests verify
 - 端到端：前两项通过后，用 Docker Compose 启动与 Render 相同的单服务生产镜像、PostgreSQL 与 Redis，再由桌面 Chromium、桌面 Firefox 和手机尺寸 Chromium 验证注册、登录失败及核心饮食流程。
 
 后端、前端和 Playwright 报告在运行页面的 Artifacts 中保留 14 天；E2E 失败时还会保存容器状态和日志。CI 使用临时数据库卷，不需要配置应用密钥或外部数据库，并在结束时自动清理。配置和排错说明见[开发交接文档](docs/HANDOFF.md#github-actions-ci已接入)。
+
+仅验证本次营养 SQL 和 Redis 缓存相关改动，可在 Run workflow 中选择 `scope: backend-data`，或运行 `gh workflow run ci.yml --ref main -f scope=backend-data`。该选项跳过前端和浏览器任务；默认 `full` 继续运行上面的完整流程。
 
 ## Documentation
 

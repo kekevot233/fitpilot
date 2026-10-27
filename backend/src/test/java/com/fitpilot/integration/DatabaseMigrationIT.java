@@ -8,6 +8,8 @@ import com.fitpilot.service.BuiltInFoodSearchCache;
 import com.fitpilot.service.FoodService;
 import com.fitpilot.service.FoodLogService;
 import com.fitpilot.service.WeightLogService;
+import com.fitpilot.service.NutritionTrendService;
+import com.fitpilot.repository.FoodLogRepository;
 import com.fitpilot.dto.weight.UpsertWeightLogRequest;
 import com.fitpilot.exception.ResourceNotFoundException;
 import org.flywaydb.core.Flyway;
@@ -62,6 +64,10 @@ class DatabaseMigrationIT {
     private FoodLogService foodLogService;
     @Autowired
     private WeightLogService weightLogService;
+    @Autowired
+    private NutritionTrendService nutritionTrendService;
+    @Autowired
+    private FoodLogRepository foodLogRepository;
     @Autowired
     private StringRedisTemplate redis;
 
@@ -245,6 +251,48 @@ class DatabaseMigrationIT {
         assertThatThrownBy(() -> weightLogService.delete(firstUser, earlierDate))
                 .isInstanceOf(ResourceNotFoundException.class);
         assertThat(weightLogService.getTrend(secondUser, endDate, 30).latestWeightKg()).isEqualByComparingTo("90");
+    }
+
+    @Test
+    @Transactional
+    void sqlTrendPreservesPerEntryRoundingSnapshotsAndDateAndUserBoundaries() {
+        Long user = insertWeightUser("trend-sql@example.com");
+        Long other = insertWeightUser("trend-other@example.com");
+        Long food = insertFood("SQL trend fixture", "999", "99", "99", "99");
+        // Each snapshot contributes 0.05 -> 0.1; rounding the final sum would incorrectly give 0.1.
+        for (int i = 0; i < 2; i++) {
+            insertFoodLog(user, food, "0.05", "SNACK", "2026-10-25 00:00:00", "Snapshot",
+                    "100", "100", "100", "100");
+        }
+        insertFoodLog(user, food, "123.45", "LUNCH", "2026-10-27 23:59:59.999999", "Snapshot",
+                "130.27", "2.69", "28.17", "0.28");
+        insertFoodLog(user, food, "100", "LUNCH", "2026-10-24 23:59:59.999999", "Outside",
+                "999", "99", "99", "99");
+        insertFoodLog(user, food, "100", "LUNCH", "2026-10-28 00:00:00", "Outside",
+                "999", "99", "99", "99");
+        insertFoodLog(other, food, "100", "LUNCH", "2026-10-25 12:00:00", "Other user",
+                "999", "99", "99", "99");
+        jdbcTemplate.update("UPDATE foods SET active = false WHERE id = ?", food);
+        LocalDate start = LocalDate.of(2026, 10, 25);
+        LocalDate end = LocalDate.of(2026, 10, 27);
+        var rows = foodLogRepository.summarizeNutritionByDate(user, start.atStartOfDay(), end.plusDays(1).atStartOfDay());
+        assertThat(rows).hasSize(2);
+        var trend = nutritionTrendService.getTrend(user, end, 3);
+        assertThat(trend.points()).hasSize(3);
+        assertThat(trend.daysLogged()).isEqualTo(2);
+        assertThat(trend.points().getFirst().calories()).isEqualByComparingTo("0.2");
+        assertThat(trend.points().getFirst().logCount()).isEqualTo(2);
+        assertThat(trend.points().get(1).logCount()).isZero();
+        for (var point : trend.points()) {
+            var dashboard = foodLogService.getDailyDashboard(user, point.date());
+            assertThat(point.calories()).isEqualByComparingTo(dashboard.consumed().calories());
+            assertThat(point.protein()).isEqualByComparingTo(dashboard.consumed().protein());
+            assertThat(point.carbs()).isEqualByComparingTo(dashboard.consumed().carbs());
+            assertThat(point.fat()).isEqualByComparingTo(dashboard.consumed().fat());
+            assertThat(point.targetCalories()).isZero();
+        }
+        assertThat(trend.averageCalories()).isEqualByComparingTo("80.5");
+        assertThat(trend.averageTargetCalories()).isZero();
     }
 
     private Long insertWeightUser(String email) {
