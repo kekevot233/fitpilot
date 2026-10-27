@@ -157,7 +157,7 @@ findTopByUserIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDescIdDesc(...)
 - `BuiltInFoodSearchCache` 使用实例内 ConcurrentHashMap/CompletableFuture 合并同关键词的进行中请求；跟随者复用已转换的公共食物 DTO，不共享私人食物查询或 JPA 实体。Semaphore 将进行中主请求限制为 64 个；跟随请求最多等待 200ms，超时直接查询数据库、不取消主请求；超额不同关键词走原查询。主请求成功或异常都会清理表项、释放额度；数据库异常传给跟随者，不缓存失败结果。关闭缓存或过长关键词仍旁路。
 - 新增固定标签指标 `fitpilot.food.cache.coalescing{result=leader|shared|timeout|saturated|interrupted}`。原 requests 指标统计执行原缓存流程的请求，跟随者看 shared，超时回源仍计 database.load；不能只用旧 requests 作为全部 HTTP 请求数。指标不含关键词、用户标签，不开放新管理端点。合并仅在同一后端实例内生效，不承诺跨实例冷查询只查一次，也不保证慢查询超时后无重复回源。
 - CI 保持手动运行，新增 `scope=backend-data`：仅运行 NutritionTrendServiceTest、NutritionTrendControllerTest、BuiltInFoodSearchCacheTest 和 DatabaseMigrationIT、FoodSearchCacheIT，并跳过前端和 E2E；默认 `full` 保留原完整验证。命令：`gh workflow run ci.yml --ref main -f scope=backend-data`。
-- 本机相关快速测试 16 项通过（缓存 11、趋势 Service 2、Controller 3）；真实 PostgreSQL/Redis 验证待本次定向 GitHub Actions 完成后补记。本机 Docker Desktop 因临时 socket 访问失败无法启动，未重置或删除数据卷；不要将旧的 healthy 记录当作本轮运行状态。不调用模型、不修改前端或业务数据。
+- 本机相关快速测试 16 项通过（缓存 11、趋势 Service 2、Controller 3）。[GitHub 定向验证 40505976406](https://github.com/kekevot233/fitpilot/actions/runs/40505976406) 对应代码提交 `724612f`：同样 16 项快速测试和真实 PostgreSQL/Redis 集成 10 项（DatabaseMigrationIT 6、FoodSearchCacheIT 4）全部通过，Maven verify/打包成功，报告已上传，前端和 E2E 两个任务均 skipped。本机 Docker Desktop 因临时 socket 访问失败无法启动；失败进程已退出，但备份重命名 socket 目录被 Windows 拒绝，未重置或删除数据卷。不要将旧的 healthy 记录当作本轮运行状态。不调用模型、不修改前端或本机业务数据。
 - 新增真实数据库用例比较 SQL 趋势与逐条计算的 Dashboard，覆盖逐条舍入、两端午夜边界、小数克数、用户隔离、食物归档后仍用快照及无目标空白日。Redis 集成增加同实例冷查询合并及随后跨实例命中；单元增加等待超时、异常传播/清理和 64 项容量边界。
 
 ## 数据库查询索引与 Redis 缓存退避（2026-10-20）
